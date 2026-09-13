@@ -10,8 +10,6 @@ outputs/
 !visualization/outputs/
 !visualization/outputs/*.html
 visualization/reproduce_manuscript_visualizations_files/
-models/*.xml
-models/*.xml.download
 CANNEX_study/core6/models/
 CANNEX_study/core15/models/
 CANNEX_study/core6/results.json

@@ -274,7 +274,7 @@ python -m unittest discover -s tests -v
 python validate_expected_cases.py
 ```
 
-The first command runs the automated unit and regression checks. The second
+The first command runs the automated unit and release checks. The second
 checks the seven prespecified comparisons stored in Cases 01-05.
 
 ## Repository contents
@@ -282,7 +282,7 @@ checks the seven prespecified comparisons stored in Cases 01-05.
 - `find_crossfeeding.py`: main pipeline entry point.
 - `create_model_manifest.py`: GEM manifest and checksum generator.
 - `src/`: six pipeline stages and Excel writer.
-- `config/`: default target, diet and regression configuration.
+- `config/`: default target and diet configuration.
 - `validation/`: eight literature-grounded tutorials and locked result files.
 - `CANNEX_study/`: exact Core-6 and Core-15 model panels, targets, results and
   checksums used for CANNEX manuscript reproducibility.

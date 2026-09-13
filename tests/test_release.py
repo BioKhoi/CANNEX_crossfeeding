@@ -27,7 +27,6 @@ from step4_intracellular_production import (
     net_production_feasibility,
     run_menetools,
 )
-from step6_cross_species_donor import read_model_manifest
 from workbook_writer import write_workbook
 
 sys.path.insert(0, str(RELEASE_DIRECTORY))
@@ -456,19 +455,24 @@ class ReleaseMetadataTest(unittest.TestCase):
         for requirement in requirements:
             self.assertIn(f"- {requirement}", environment)
 
-    def test_model_manifest_has_explicit_species_and_checksums(self) -> None:
-        manifest = read_model_manifest(RELEASE_DIRECTORY / "config" / "model_manifest.tsv")
-        self.assertEqual(len(manifest), 5)
-        for record in manifest.values():
-            self.assertTrue(record["species"])
-            self.assertEqual(len(record["sha256"]), 64)
-
-    def test_manuscript_edge_regression_file(self) -> None:
-        expected_path = RELEASE_DIRECTORY / "config" / "expected_manuscript_edges.tsv"
-        with expected_path.open(encoding="utf-8", newline="") as handle:
-            expected = list(csv.DictReader(handle, delimiter="\t"))
-        self.assertEqual(len(expected), 10)
-        self.assertEqual(len({tuple(row.values()) for row in expected}), 10)
+    def test_release_uses_only_validation_and_cannex_model_panels(self) -> None:
+        root_models = RELEASE_DIRECTORY / "models"
+        self.assertFalse((root_models / "README.md").exists())
+        self.assertFalse(list(root_models.glob("*.xml")))
+        config_files = {
+            path.name
+            for path in (RELEASE_DIRECTORY / "config").iterdir()
+            if path.is_file()
+        }
+        self.assertSetEqual(
+            config_files,
+            {"HighFiberDietAGORA2.txt", "clinical_targets.tsv"},
+        )
+        windows_setup = (
+            RELEASE_DIRECTORY / "windows" / "setup_and_test.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("01_two_donors_control", windows_setup)
+        self.assertNotIn("ModelBaseUrl", windows_setup)
 
     def test_saved_validation_results_match_expected_cases(self) -> None:
         expected_paths = sorted(
@@ -601,37 +605,6 @@ class ReleaseMetadataTest(unittest.TestCase):
         )
         self.assertIn(positive, retained)
         self.assertNotIn(negative, retained)
-
-    @unittest.skipUnless(
-        os.environ.get("CROSSFEEDING_RESULT_JSON"),
-        "set CROSSFEEDING_RESULT_JSON for result regression",
-    )
-    def test_external_result_matches_expected_edges(self) -> None:
-        result_path = Path(os.environ["CROSSFEEDING_RESULT_JSON"]).expanduser().resolve()
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-        observed = {
-            (
-                str(row["donor_model_id"]),
-                str(row["precursor_id"]),
-                str(row["recipient_model_id"]),
-                str(row["final_target_id"]),
-            )
-            for row in result["rows"]
-            if row["decision"] == "Keep"
-        }
-        expected_path = RELEASE_DIRECTORY / "config" / "expected_manuscript_edges.tsv"
-        with expected_path.open(encoding="utf-8", newline="") as handle:
-            expected = {
-                (
-                    row["donor_model_id"],
-                    row["precursor_id"],
-                    row["recipient_model_id"],
-                    row["final_target_id"],
-                )
-                for row in csv.DictReader(handle, delimiter="\t")
-            }
-        self.assertSetEqual(observed, expected)
-
 
 if __name__ == "__main__":
     unittest.main()

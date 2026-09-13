@@ -3,48 +3,46 @@
 ## Requirements
 
 - 64-bit Windows 10 or Windows 11
-- Internet access for the first setup
+- Internet access for the first environment setup
 - 64-bit Miniconda or Anaconda
 
 No R installation is needed to test the scientific Python workflow.
 
 ## Default compatibility test
 
-1. Extract the ZIP to a local folder, preferably a short path such as
-   `C:\crossfeeding_workflow`.
+1. Download or clone the repository to a local folder, preferably a short path
+   such as `C:\crossfeeding_workflow`.
 2. Double-click `windows\RUN_WINDOWS_TEST.bat`.
 3. Keep the terminal open until the final success or error message appears.
 
 The first run:
 
-- downloads the exact five official AGORA2 v2.01 XML files;
-- verifies every model checksum;
 - creates the pinned `crossfeeding-workflow` Conda environment;
-- validates inputs and dependencies;
-- runs the synthetic and release tests.
+- checks Python, MeneTools and Clingo;
+- validates the bundled Validation Case 01 GEMs, manifest and target table;
+- runs the automated tests; and
+- checks the seven locked validation comparisons.
 
-The default test does not run the six-stage analysis and does not create an
-Excel, JSON, CSV, or figure output.
+The default test does not create a new Excel or JSON result.
 
-## Full analysis and manuscript-edge regression
+## Run the complete Case 01 tutorial
 
-Open Anaconda Prompt in the extracted release folder and run:
+Open Anaconda Prompt in the repository folder and run:
 
 ```bat
 windows\RUN_WINDOWS_TEST.bat -FullAnalysis
 ```
 
-This explicit option creates:
+This creates:
 
 ```text
-outputs\windows_test_results.xlsx
-outputs\windows_test_results.json
+outputs\case01_windows_test.xlsx
+outputs\case01_windows_test.json
 ```
 
-It then verifies retained edge identities against
-`config\expected_manuscript_edges.tsv`. The bundled file is still the earlier
-ten-edge snapshot. Relock it after biological review of the current generalized
-workflow output before using `-FullAnalysis` as the final manuscript regression.
+The workbook is the same user-facing potential-edge output described in the
+main README. The Case 01 GEMs are already included under `validation\cases`;
+the Windows launcher does not download a separate development model panel.
 
 ## What to send back after testing
 
@@ -52,8 +50,8 @@ Please report:
 
 - Windows version;
 - whether the default test passed;
-- the number of edges retained by `-FullAnalysis` and whether the regression
-  passed against the manuscript-locked edge file;
+- the number of Case 01 edges retained by `-FullAnalysis`; and
 - the complete terminal error text if anything failed.
 
-The R figure is optional and is not part of this Windows compatibility test.
+The R visualization is separate and is not part of this Windows compatibility
+test.
