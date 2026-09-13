@@ -1,0 +1,2 @@
+target_name	base_id	host_relevance	metabolite_class	microbial_evidence	selection_rationale	reference
+Propionate	ppa	Gut and neuroimmune relevance	Short-chain fatty acid	Exact-strain co-culture converted donor-produced succinate to propionate	Literature validation target for an experimentally demonstrated succinate cross-feeding route	Watanabe et al. 2012; doi:10.1128/AEM.06035-11

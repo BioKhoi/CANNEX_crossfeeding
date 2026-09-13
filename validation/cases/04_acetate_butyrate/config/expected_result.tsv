@@ -1,0 +1,2 @@
+case_id	condition	donor_model_id	precursor_id	recipient_model_id	final_target_id	expected_outcome	status	result_json
+positive_ncc2705_rectale	Both exact literature strains; expectation table withheld until prediction finishes	M_Bifidobacterium_longum_NCC2705	ac	M_Eubacterium_rectale_ATCC_33656	but	Expected edge must be present; unrelated predictions are not assigned biological truth by this row	Expected edge retained by unbiased run on 2026-08-30	validation/cases/04_acetate_butyrate/results/result.json

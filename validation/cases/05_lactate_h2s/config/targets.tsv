@@ -1,0 +1,2 @@
+target_name	base_id	host_relevance	metabolite_class	microbial_evidence	selection_rationale	reference
+Hydrogen sulfide	h2s	Gut epithelial toxicity and inflammatory bowel disease relevance	Microbial sulfur metabolite	Exact-strain coculture showed lactate-producing Bifidobacterium adolescentis L2-32 stimulates sulfide formation by Desulfovibrio piger DSM 749 (ATCC 29098) in sulfate-containing medium	Literature-positive validation of a specified donor-intermediate-recipient-target route	Marquet et al. 2009; doi:10.1111/j.1574-6968.2009.01750.x

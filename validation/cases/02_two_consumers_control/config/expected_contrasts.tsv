@@ -1,0 +1,3 @@
+case_id	varied_component	donor_model_id	consumer_model_id	precursor_id	target_id	expected_result	biological_basis	reference
+case2_positive_consumer	consumer	M_Bifidobacterium_adolescentis_L2_32	M_Eubacterium_hallii_L2_7	lac_L	but	edge_present	L2-7 consumes D- and L-lactate and forms butyrate; the exact L2-32/L2-7 coculture increased butyrate	Duncan et al. 2004; doi:10.1128/AEM.70.10.5810-5817.2004; Belenguer et al. 2006; doi:10.1128/AEM.72.5.3593-3599.2006
+case2_negative_consumer	consumer	M_Bifidobacterium_adolescentis_L2_32	M_Phascolarctobacterium_succinatutens_YIT_12067	lac_L	but	edge_absent	YIT 12067 did not use tested lactate and instead specializes in converting succinate to propionate	Watanabe et al. 2012; doi:10.1128/AEM.06035-11

@@ -1,0 +1,2997 @@
+---
+title: "CANNEX pain/gut-brain cross-feeding summary"
+subtitle: "Core-6 and Core-15 analyses"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: flatly
+params:
+  data_root: null
+  validation_root: null
+  strict_input_hash: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 180,
+  out.width = "100%"
+)
+
+suppressPackageStartupMessages({
+  library(DiagrammeR)
+  library(digest)
+  library(dplyr)
+  library(ggplot2)
+  library(ggalluvial)
+  library(ggnewscale)
+  library(htmltools)
+  library(jsonlite)
+  library(readxl)
+  library(scales)
+  library(knitr)
+  library(kableExtra)
+  library(stringr)
+  library(tidyr)
+})
+
+theme_science <- function() {
+  theme_minimal(base_family = "Arial", base_size = 11) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_line(colour = "#E5E8EB", linewidth = 0.35),
+      axis.text = element_text(colour = "#303841"),
+      axis.title = element_text(colour = "#303841"),
+      strip.text = element_text(face = "bold", colour = "#25313C"),
+      strip.background = element_rect(fill = "#EFF2F4", colour = NA),
+      plot.title = element_text(face = "bold", size = 12.5, colour = "#18232D"),
+      plot.title.position = "plot",
+      legend.title = element_blank(),
+      legend.position = "bottom"
+    )
+}
+
+manuscript_palette <- list(
+  deepskyblue = "#00BFFF",
+  lightblue = "#ADD8E6",
+  orchid = "#DA70D6",
+  mediumorchid = "#BA55D3",
+  pink = "#FFC0CB",
+  violetred1 = "#FF3E96",
+  black = "#111111",
+  white = "#FFFFFF",
+  lightgrey = "#E8E8EE",
+  midgrey = "#73737D"
+)
+```
+
+```{r input-folder-configuration, include=FALSE}
+# ============== RUN THIS FIRST WHEN WORKING CHUNK BY CHUNK =============
+# Usually leave these as NULL. If an RStudio folder-selection window is not
+# available, enter the appropriate folder between quotation marks.
+manual_data_root <- NULL
+manual_validation_root <- NULL
+
+nonempty_path <- function(x) {
+  is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x))
+}
+
+rmd_parameter <- function(name) {
+  if (!exists("params", inherits = TRUE)) return(NULL)
+  value <- get("params", inherits = TRUE)[[name]]
+  if (is.null(value) || (is.character(value) && !nzchar(value))) NULL else value
+}
+
+active_report_directory <- function() {
+  input <- tryCatch(knitr::current_input(), error = function(e) "")
+  if (nonempty_path(input) && file.exists(input)) {
+    return(dirname(normalizePath(input, winslash = "/", mustWork = TRUE)))
+  }
+
+  if (interactive() && requireNamespace("rstudioapi", quietly = TRUE) &&
+      rstudioapi::isAvailable()) {
+    source_path <- tryCatch(
+      rstudioapi::getSourceEditorContext()$path,
+      error = function(e) ""
+    )
+    if (nonempty_path(source_path) && file.exists(source_path)) {
+      return(dirname(normalizePath(
+        source_path, winslash = "/", mustWork = TRUE
+      )))
+    }
+  }
+
+  normalizePath(getwd(), winslash = "/", mustWork = TRUE)
+}
+
+folder_contains <- function(root, required_files) {
+  nonempty_path(root) && dir.exists(root) &&
+    all(file.exists(file.path(root, required_files)))
+}
+
+select_folder_in_rstudio <- function(caption, starting_directory) {
+  if (!interactive() || !requireNamespace("rstudioapi", quietly = TRUE) ||
+      !rstudioapi::isAvailable()) {
+    return(NULL)
+  }
+  selected <- tryCatch(
+    rstudioapi::selectDirectory(
+      caption = caption, label = "Use this folder", path = starting_directory
+    ),
+    error = function(e) NULL
+  )
+  if (nonempty_path(selected)) selected else NULL
+}
+
+resolve_input_folder <- function(
+    label, required_files, manual_value, parameter_name, environment_name,
+    automatic_candidates, starting_directory) {
+  candidates <- c(
+    manual_value,
+    rmd_parameter(parameter_name),
+    Sys.getenv(environment_name, unset = ""),
+    automatic_candidates
+  )
+  candidates <- unique(candidates[vapply(candidates, nonempty_path, logical(1))])
+
+  for (candidate in candidates) {
+    if (folder_contains(candidate, required_files)) {
+      return(normalizePath(candidate, winslash = "/", mustWork = TRUE))
+    }
+  }
+
+  selected <- select_folder_in_rstudio(
+    paste0("Select the ", label, " folder"), starting_directory
+  )
+  if (folder_contains(selected, required_files)) {
+    return(normalizePath(selected, winslash = "/", mustWork = TRUE))
+  }
+
+  stop(
+    "Could not locate the ", label, " folder. Run this configuration chunk ",
+    "again and select the folder containing: ",
+    paste(required_files, collapse = ", "), ". If no folder-selection window ",
+    "appears, set the corresponding manual_*_root value in this chunk."
+  )
+}
+
+report_directory <- active_report_directory()
+
+data_required_files <- c(
+  file.path(
+    "crossfeeding_analysis_6", "batch1_pain_gutbrain_results.xlsx"
+  ),
+  file.path(
+    "crossfeeding_analysis_6", "models_qc_passed", "model_manifest.tsv"
+  ),
+  file.path(
+    "crossfeeding_analysis_6", "batch1_single_root_literature_evidence.tsv"
+  ),
+  file.path(
+    "crossfeeding_analysis_15", "batch1_species_root_posthoc.json"
+  ),
+  file.path(
+    "crossfeeding_analysis_15", "batch1_pain_gutbrain_results.xlsx"
+  ),
+  file.path(
+    "crossfeeding_analysis_15", "batch1_single_root_literature_evidence.tsv"
+  )
+)
+validation_required_files <- c(
+  "VALIDATION_INDEX.tsv", "validation_summary.csv"
+)
+
+resolved_data_root <- resolve_input_folder(
+  label = "CANNEX gem_screening",
+  required_files = data_required_files,
+  manual_value = manual_data_root,
+  parameter_name = "data_root",
+  environment_name = "CROSSFEEDING_DATA_ROOT",
+  automatic_candidates = c(report_directory, getwd()),
+  starting_directory = report_directory
+)
+
+resolved_validation_root <- resolve_input_folder(
+  label = "Khoi_prototype/validation",
+  required_files = validation_required_files,
+  manual_value = manual_validation_root,
+  parameter_name = "validation_root",
+  environment_name = "CROSSFEEDING_VALIDATION_ROOT",
+  automatic_candidates = c(
+    resolved_data_root,
+    file.path(report_directory, "validation"),
+    file.path(resolved_data_root, "validation"),
+    getwd()
+  ),
+  starting_directory = report_directory
+)
+
+crossfeeding_input_paths <- list(
+  data_root = resolved_data_root,
+  validation_root = resolved_validation_root
+)
+crossfeeding_strict_input_hash <- rmd_parameter("strict_input_hash")
+if (is.null(crossfeeding_strict_input_hash)) {
+  crossfeeding_strict_input_hash <- TRUE
+}
+
+# Retain the selections for later runs in the same RStudio session.
+Sys.setenv(
+  CROSSFEEDING_DATA_ROOT = crossfeeding_input_paths$data_root,
+  CROSSFEEDING_VALIDATION_ROOT = crossfeeding_input_paths$validation_root
+)
+
+cat(
+  "Input folders ready.\n",
+  "CANNEX data: ", crossfeeding_input_paths$data_root, "\n",
+  "Validation data: ", crossfeeding_input_paths$validation_root, "\n",
+  sep = ""
+)
+# ======================================================================
+```
+
+## Interpretation boundary
+
+The core Python workflow identifies **GEM-supported potential cross-feeding relationships**. It does not establish realized metabolite exchange in vivo. Core-6 and Core-15 are displayed separately because the taxon sets overlap and therefore must not be summed.
+
+For the literature layer, donor-to-precursor evidence is now mandatory. Two
+mutually exclusive qualifying classes are used: **Case 1** means that the
+donor-to-exact-precursor reaction is supported but the recipient-to-target
+reaction is not; **Case 2** means that both reactions are supported at
+exact-strain or same-species resolution. Recipient-to-target evidence alone is
+not classified as literature support for a cross-feeding relationship.
+
+## Methods
+
+### CANNEX taxon sets and 16S refinement
+
+Two previously locked CANNEX taxon sets were analyzed independently. The
+Core-6 analysis began with six ASVs and retained four ASVs for GEM analysis.
+The Core-15 analysis began with 15 ASVs, retained 13 genus- or species-level
+assignments for sequence assessment, and retained seven ASVs after 16S
+refinement. Candidate AGORA2 taxa were evaluated using only 16S rRNA reference
+sequences; whole-genome sequences were not used. The complete 253-nt ASV V4
+sequence was aligned to candidate reference sequences, and high-confidence
+mapping required complete V4 coverage and at least 99% nucleotide identity.
+Only species tied at the highest identity for an ASV were carried forward.
+Because this amplicon region cannot establish strain identity, all available
+GEMs within a retained species were treated as a strain panel rather than as
+proof that the study ASV represented a specific strain.
+
+### GEM selection and quality control
+
+Candidate models were obtained from the locally archived AGORA2 v2.01
+collection. Forty GEMs were considered for Core-6 and 50 GEMs were selected
+after 16S refinement for Core-15. Each source SBML file was required to parse
+as well-formed XML without alteration. Files declaring UTF-8 but containing an
+incompatible Latin-1 byte were excluded rather than repaired. This produced 30
+raw-XML-QC-passing Core-6 GEMs and 37 Core-15 GEMs; subsequent Core-6 sequence
+refinement yielded its final 29-GEM panel. Model manifests recorded species,
+strain, source filename, model identifier, and SHA-256 checksum so that the
+exact input panels and species denominators were fixed before screening.
+
+### Target selection and cross-feeding screen
+
+Seven pain- or gut-brain-axis-related metabolites were selected before GEM
+screening: GABA, butyrate, histamine, deoxycholate, hydrogen sulfide,
+tryptamine, and indole-3-propionate. Expected precursors, donors, and recipients
+were not supplied to the discovery algorithm. The unchanged target-focused
+Python workflow was run with Python 3.11, MeneTools 3.4.0, the AGORA2 HighFiber
+diet as study context, anaerobic target-withheld conditions, and
+`PYTHONHASHSEED=0` for deterministic search ordering.
+
+For each selected target, the workflow sequentially required: (i) presence of
+the target identifier; (ii) a target exchange reaction permitting export;
+(iii) directionally valid outward transport from cytosol to extracellular
+space, including a cytosol-to-periplasm-to-extracellular chain when represented;
+(iv) at least one target-withheld intracellular production path with strictly
+positive net target formation; (v) exchange import and directionally valid
+inward transport for each nominated extracellular precursor; and (vi)
+intracellular precursor formation, outward transport, and export by a
+different-species donor while withholding that precursor. MeneTools paths were
+qualitative, cardinality-minimal reaction sets rather than flux-, yield-, or
+growth-optimal solutions. Up to 25 representative alternative paths were
+retained per recipient-model/target pair, together with their complete
+non-currency extracellular root sets.
+
+### Post-hoc aggregation and evidence classification
+
+Saved model-level results were audited without rerunning or modifying the core
+workflow. Recipient paths were rechecked for positive net target formation,
+and retained donor paths were rechecked for positive net precursor production,
+outward transport, and exchange export. Results were collapsed using the
+directional key target + donor species + focal precursor + recipient species,
+while retaining the exact supporting and tested GEM counts (`n/N`). A
+relationship was classified as single-precursor when at least one retained
+recipient path used only the focal extracellular precursor as its non-currency
+root; otherwise it was classified as multi-precursor. For every displayed
+multi-precursor Case-2 route, the same recipient GEM was additionally required
+to contain the exact production path and to support exchange import and inward
+transport of every root in the displayed input set.
+
+Primary-literature assessment was performed after fixing the GEM-derived
+relationships. Donor evidence required exact-precursor production or release
+at exact-strain or same-species resolution; genus-level evidence, gene presence
+alone, and unresolved stereochemistry did not qualify. `Case 1` denoted
+donor-to-precursor support without qualifying recipient-to-target support, and
+`Case 2` denoted support for both terminal reactions. For the simplified
+Sankey display, `Yes` combines Cases 1 and 2 because both contain qualifying
+donor-to-exact-precursor evidence; `No` denotes relationships for which no such
+donor evidence was identified. The latter is an evidence-gap classification,
+not evidence that the modeled relationship is biologically impossible.
+
+### Pipeline validation and visualization
+
+Eight literature-defined validation cases were assessed using the saved
+workflow outputs. Two matched triads tested a positive and negative branch
+while holding either the recipient or donor constant; three additional cases
+served as independent positive anchors. The remaining cases were retained as
+partial or informative non-pass examples to expose current GEM and workflow
+boundaries. Figures were generated in R using `ggplot2`, `ggalluvial`, and
+`DiagrammeR`. Network nodes represent potential donors, extracellular
+precursors or complete input sets, potential recipients, and target
+metabolites. Edge labels report `n/N` GEM support. These analyses describe
+structural metabolic potential and do not establish secretion quantity,
+simultaneous community flux, recipient growth benefit, in vivo transfer, or
+causality for pain.
+
+## Results
+
+### Pipeline validation controls
+
+Eight literature-defined cases were used to test whether the workflow retains
+expected relationships and excludes expected null relationships. Cases 01 and
+02 are matched triad controls: each contains a positive branch and a negative
+branch while holding either the recipient or donor constant. Cases 03--05 are
+independent positive anchors. Case 06 is a partial pathway match, whereas Cases
+07--08 are informative non-passes in which target-production potential was
+recovered but the literature-described donor edge was not reproduced. These
+last three cases are shown to define the present workflow boundary and are not
+counted as formal validation passes.
+
+```{r validation-data-preparation, include=FALSE}
+if (!exists("crossfeeding_input_paths", inherits = TRUE)) {
+  stop(
+    "Run the 'input-folder-configuration' chunk before this chunk."
+  )
+}
+validation_root <- crossfeeding_input_paths$validation_root
+
+validation_inputs <- c(
+  validation_index = file.path(validation_root, "VALIDATION_INDEX.tsv"),
+  validation_summary = file.path(validation_root, "validation_summary.csv")
+)
+
+if (!all(file.exists(validation_inputs))) {
+  stop(
+    "Missing locked validation input(s): ",
+    paste(names(validation_inputs)[!file.exists(validation_inputs)], collapse = ", "),
+    ". Run the 'input-folder-configuration' chunk again and select the ",
+    "Khoi_prototype/validation directory."
+  )
+}
+
+expected_validation_sha256 <- c(
+  validation_index = "1fd302fedec934b5bd84d96384ae06e967f27973fd9b5e88d2ed3159f591a816",
+  validation_summary = "bec222a7206efa1d5be9c11158aeb85d692b5bcd2b0b6ee4ad7667ad9df1d69a"
+)
+observed_validation_sha256 <- vapply(
+  validation_inputs,
+  function(path) digest(file = path, algo = "sha256", serialize = FALSE),
+  character(1)
+)
+if (isTRUE(crossfeeding_strict_input_hash) &&
+    !identical(observed_validation_sha256, expected_validation_sha256)) {
+  changed <- names(observed_validation_sha256)[
+    observed_validation_sha256 != expected_validation_sha256
+  ]
+  stop("Locked validation input changed: ", paste(changed, collapse = ", "))
+}
+
+validation_index <- read.delim(
+  validation_inputs[["validation_index"]],
+  check.names = FALSE, stringsAsFactors = FALSE
+) |>
+  mutate(
+    display_case = paste0("Case ", str_sub(case_id, 1, 2)),
+    outcome = case_when(
+      str_starts(status, "Passed:") ~ "Formal pass",
+      str_starts(status, "Retained partial") ~ "Partial match",
+      TRUE ~ "Informative non-pass"
+    )
+  )
+
+validation_summary <- read.csv(
+  validation_inputs[["validation_summary"]],
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+
+if (nrow(validation_index) != 8L || nrow(validation_summary) != 10L) {
+  stop("Expected 8 validation cases and 10 case-branch summary rows.")
+}
+if (!identical(
+  as.integer(table(factor(
+    validation_index$outcome,
+    levels = c("Formal pass", "Partial match", "Informative non-pass")
+  ))),
+  c(5L, 1L, 2L)
+)) {
+  stop("The locked case-level validation outcome counts have changed.")
+}
+
+validation_outcomes <- validation_index |>
+  count(outcome, name = "cases") |>
+  mutate(
+    outcome = factor(
+      outcome,
+      levels = c("Formal pass", "Partial match", "Informative non-pass")
+    )
+  )
+
+validation_html_label <- function(x, width = 28L) {
+  lines <- strwrap(x, width = width)
+  escaped <- vapply(lines, function(z) as.character(htmlEscape(z)), character(1))
+  paste0("<", paste(escaped, collapse = "<BR/>"), ">")
+}
+
+network_with_downloads <- function(widget, file_stub, png_scale = 3) {
+  # Downloads are created only after a reader clicks a button; knitting the
+  # report does not write any figure files.
+  element_id <- paste0(
+    "network_", gsub("[^A-Za-z0-9_]+", "_", file_stub)
+  )
+  controls_id <- paste0(element_id, "_download_controls")
+  widget$elementId <- element_id
+
+  button_style <- paste(
+    "background:#FFFFFF", "border:1px solid #111111",
+    "border-radius:4px", "color:#111111", "cursor:pointer",
+    "font-family:Arial,sans-serif", "font-size:12px",
+    "margin-right:6px", "padding:5px 10px", sep = ";"
+  )
+  controls <- tags$div(
+    id = controls_id,
+    style = paste0("margin:6px 0 14px 0;text-align:left;"),
+    tags$button(
+      type = "button", `data-network-format` = "svg",
+      style = button_style, "Download SVG"
+    ),
+    tags$button(
+      type = "button", `data-network-format` = "png",
+      style = button_style,
+      paste0("Download PNG (", png_scale, "x)")
+    )
+  )
+
+  javascript <- paste0(
+    "(function(){",
+    "const targetId=", toJSON(element_id, auto_unbox = TRUE), ";",
+    "const controlsId=", toJSON(controls_id, auto_unbox = TRUE), ";",
+    "const fileBase=", toJSON(file_stub, auto_unbox = TRUE), ";",
+    "const pngScale=", as.numeric(png_scale), ";",
+    "const controls=document.getElementById(controlsId);",
+    "if(!controls||controls.dataset.downloadReady==='1'){return;}",
+    "controls.dataset.downloadReady='1';",
+    "function downloadBlob(blob,name){",
+    "const url=URL.createObjectURL(blob);",
+    "const link=document.createElement('a');",
+    "link.href=url;link.download=name;document.body.appendChild(link);",
+    "link.click();link.remove();",
+    "window.setTimeout(function(){URL.revokeObjectURL(url);},1000);",
+    "}",
+    "function prepareSvg(svg){",
+    "const clone=svg.cloneNode(true);",
+    "clone.setAttribute('xmlns','http://www.w3.org/2000/svg');",
+    "clone.setAttribute('xmlns:xlink','http://www.w3.org/1999/xlink');",
+    "const rect=svg.getBoundingClientRect();",
+    "const vb=(svg.viewBox&&svg.viewBox.baseVal)?svg.viewBox.baseVal:null;",
+    "const width=Math.max(1,Math.round(rect.width||(vb&&vb.width)||1200));",
+    "const height=Math.max(1,Math.round(rect.height||(vb&&vb.height)||700));",
+    "clone.setAttribute('width',width);clone.setAttribute('height',height);",
+    "const ns='http://www.w3.org/2000/svg';",
+    "const bg=document.createElementNS(ns,'rect');",
+    "bg.setAttribute('x',vb?vb.x:0);bg.setAttribute('y',vb?vb.y:0);",
+    "bg.setAttribute('width',vb?vb.width:width);",
+    "bg.setAttribute('height',vb?vb.height:height);",
+    "bg.setAttribute('fill','#FFFFFF');clone.insertBefore(bg,clone.firstChild);",
+    "return {xml:'<?xml version=\"1.0\" encoding=\"UTF-8\"?>'+",
+    "new XMLSerializer().serializeToString(clone),width:width,height:height};",
+    "}",
+    "controls.addEventListener('click',function(event){",
+    "const button=event.target.closest('button[data-network-format]');",
+    "if(!button){return;}",
+    "const target=document.getElementById(targetId);",
+    "const svg=target?target.querySelector('svg'):null;",
+    "if(!svg){window.alert('The network is still rendering. Please try again.');return;}",
+    "const prepared=prepareSvg(svg);",
+    "if(button.dataset.networkFormat==='svg'){",
+    "downloadBlob(new Blob([prepared.xml],",
+    "{type:'image/svg+xml;charset=utf-8'}),fileBase+'.svg');return;",
+    "}",
+    "const svgBlob=new Blob([prepared.xml],{type:'image/svg+xml;charset=utf-8'});",
+    "const svgUrl=URL.createObjectURL(svgBlob);const image=new Image();",
+    "image.onload=function(){",
+    "const canvas=document.createElement('canvas');",
+    "canvas.width=Math.ceil(prepared.width*pngScale);",
+    "canvas.height=Math.ceil(prepared.height*pngScale);",
+    "const context=canvas.getContext('2d');",
+    "context.setTransform(pngScale,0,0,pngScale,0,0);",
+    "context.drawImage(image,0,0,prepared.width,prepared.height);",
+    "URL.revokeObjectURL(svgUrl);",
+    "canvas.toBlob(function(blob){",
+    "if(blob){downloadBlob(blob,fileBase+'.png');}",
+    "},'image/png',1);",
+    "};",
+    "image.onerror=function(){URL.revokeObjectURL(svgUrl);",
+    "window.alert('PNG creation failed; please use the SVG download.');};",
+    "image.src=svgUrl;",
+    "});",
+    "})();"
+  )
+
+  htmlwidgets::appendContent(
+    widget,
+    controls,
+    tags$script(HTML(javascript))
+  )
+}
+
+validation_case_specs <- list(
+  list(
+    case = "Case 01", title = "Two donors; one fixed recipient",
+    outcome = "Formal pass",
+    nodes = data.frame(
+      id = c("dp", "dn", "p", "r", "t"),
+      label = c(
+        "Bifidobacterium adolescentis L2-32",
+        "Paraprevotella xylaniphila YIT 11841",
+        "L-lactate", "Eubacterium hallii L2-7", "Butyrate"
+      ),
+      role = c("donor", "negative", "precursor", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("dp", "p", "r", "dn"),
+      to = c("p", "r", "t", "p"),
+      state = c("retained", "retained", "retained", "confirmed_absent"),
+      label = c("retained", "", "", "negative donor excluded")
+    )
+  ),
+  list(
+    case = "Case 02", title = "One donor; two recipients",
+    outcome = "Formal pass",
+    nodes = data.frame(
+      id = c("d", "p", "rp", "rn", "t"),
+      label = c(
+        "Bifidobacterium adolescentis L2-32", "L-lactate",
+        "Eubacterium hallii L2-7",
+        "Phascolarctobacterium succinatutens YIT 12067", "Butyrate"
+      ),
+      role = c("donor", "precursor", "recipient", "negative", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "rp", "p"),
+      to = c("p", "rp", "t", "rn"),
+      state = c("retained", "retained", "retained", "confirmed_absent"),
+      label = c("", "retained", "", "negative recipient excluded")
+    )
+  ),
+  list(
+    case = "Case 03", title = "Succinate to propionate",
+    outcome = "Formal pass",
+    nodes = data.frame(
+      id = c("d", "p", "r", "t"),
+      label = c(
+        "Paraprevotella xylaniphila YIT 11841", "Succinate",
+        "Phascolarctobacterium succinatutens YIT 12067", "Propionate"
+      ),
+      role = c("donor", "precursor", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "r"), to = c("p", "r", "t"),
+      state = rep("retained", 3), label = c("", "retained", "")
+    )
+  ),
+  list(
+    case = "Case 04", title = "Acetate to butyrate",
+    outcome = "Formal pass",
+    nodes = data.frame(
+      id = c("d", "p", "r", "t"),
+      label = c(
+        "Bifidobacterium longum NCC2705", "Acetate",
+        "Eubacterium rectale ATCC 33656", "Butyrate"
+      ),
+      role = c("donor", "precursor", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "r"), to = c("p", "r", "t"),
+      state = rep("retained", 3), label = c("", "retained", "")
+    )
+  ),
+  list(
+    case = "Case 05", title = "L-lactate to hydrogen sulfide",
+    outcome = "Formal pass",
+    nodes = data.frame(
+      id = c("d", "p", "r", "t"),
+      label = c(
+        "Bifidobacterium adolescentis L2-32", "L-lactate",
+        "Desulfovibrio piger ATCC 29098 (DSM 749)", "Hydrogen sulfide"
+      ),
+      role = c("donor", "precursor", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "r"), to = c("p", "r", "t"),
+      state = rep("retained", 3), label = c("", "retained", "")
+    )
+  ),
+  list(
+    case = "Case 06", title = "Putrescine pathway",
+    outcome = "Partial match",
+    nodes = data.frame(
+      id = c("d", "p", "a", "r", "t"),
+      label = c(
+        "Streptococcus gordonii CH1", "Ornithine", "L-arginine",
+        "Fusobacterium nucleatum ATCC 25586", "Putrescine"
+      ),
+      role = c("donor", "precursor", "alternative", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "d", "a", "r"),
+      to = c("p", "r", "a", "r", "t"),
+      state = c("not_recovered", "context", "partial", "partial", "partial"),
+      label = c(
+        "literature edge not recovered", "literature route",
+        "GEM-supported alternative", "alternative route",
+        "production recovered"
+      )
+    )
+  ),
+  list(
+    case = "Case 07", title = "Indole-3-lactate to indole-3-propionate",
+    outcome = "Informative non-pass",
+    nodes = data.frame(
+      id = c("d", "p", "r", "t"),
+      label = c(
+        "Lactobacillus reuteri I5007", "Indole-3-lactate",
+        "Clostridium sporogenes ATCC 15579", "Indole-3-propionate"
+      ),
+      role = c("donor", "precursor", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "r"), to = c("p", "r", "t"),
+      state = c("not_recovered", "context", "partial"),
+      label = c(
+        "donor GEM lacks metabolite", "literature route",
+        "production recovered"
+      )
+    )
+  ),
+  list(
+    case = "Case 08", title = "Cholate to deoxycholate",
+    outcome = "Informative non-pass",
+    nodes = data.frame(
+      id = c("d", "p", "r", "t"),
+      label = c(
+        "Bacteroides thetaiotaomicron VPI-5482", "Cholate",
+        "Clostridium scindens ATCC 35704", "Deoxycholate"
+      ),
+      role = c("donor", "precursor", "recipient", "target")
+    ),
+    edges = data.frame(
+      from = c("d", "p", "r"), to = c("p", "r", "t"),
+      state = c("not_recovered", "partial", "partial"),
+      label = c(
+        "donor production not retained", "recipient precursor found",
+        "production recovered"
+      )
+    )
+  )
+)
+
+make_validation_composite <- function(specs, style) {
+  # Graphviz fills this packed one-column array bottom-to-top. Reverse each
+  # pair so the lower-numbered case is displayed above the next case.
+  if (length(specs) == 2L) {
+    specs <- rev(specs)
+  }
+  role_styles <- list(
+    donor = c(
+      style$donor_fill, style$donor_border, style$donor_font_colour
+    ),
+    negative = c(
+      style$negative_fill, style$negative_border, style$negative_font_colour
+    ),
+    precursor = c(
+      style$precursor_fill, style$precursor_border,
+      style$precursor_font_colour
+    ),
+    alternative = c(
+      style$alternative_fill, style$alternative_border,
+      style$alternative_font_colour
+    ),
+    recipient = c(
+      style$recipient_fill, style$recipient_border,
+      style$recipient_font_colour
+    ),
+    target = c(
+      style$target_fill, style$target_border, style$target_font_colour
+    )
+  )
+  edge_styles <- list(
+    retained = list(
+      colour = style$retained_edge_colour, line = "solid",
+      head = style$arrow_head, width = style$retained_edge_width
+    ),
+    confirmed_absent = list(
+      colour = style$confirmed_absent_edge_colour, line = "dashed",
+      head = "tee", width = style$absent_edge_width
+    ),
+    partial = list(
+      colour = style$partial_edge_colour, line = "solid",
+      head = style$arrow_head, width = style$partial_edge_width
+    ),
+    not_recovered = list(
+      colour = style$not_recovered_edge_colour, line = "dashed",
+      head = "tee", width = style$missing_edge_width
+    ),
+    context = list(
+      colour = style$context_edge_colour, line = "dashed",
+      head = style$arrow_head, width = style$context_edge_width
+    )
+  )
+
+  cluster_blocks <- vapply(seq_along(specs), function(case_index) {
+    spec <- specs[[case_index]]
+    prefix <- paste0("case", str_pad(case_index, 2, pad = "0"), "_")
+
+    node_lines <- vapply(seq_len(nrow(spec$nodes)), function(i) {
+      node <- spec$nodes[i, ]
+      colours <- role_styles[[node$role]]
+      shape <- if (node$role == "precursor") {
+        style$precursor_shape
+      } else if (node$role == "target") {
+        style$target_shape
+      } else {
+        style$node_shape
+      }
+      sprintf(
+        '%s%s [label=%s, shape="%s", fillcolor="%s", color="%s", fontcolor="%s", penwidth=%.2f];',
+        prefix, node$id,
+        validation_html_label(node$label, style$label_wrap_width),
+        shape, colours[1], colours[2], colours[3], style$node_border_width
+      )
+    }, character(1))
+
+    edge_lines <- vapply(seq_len(nrow(spec$edges)), function(i) {
+      edge <- spec$edges[i, ]
+      edge_style <- edge_styles[[edge$state]]
+      label_attribute <- if (nzchar(edge$label)) {
+        paste0(
+          ", label=",
+          validation_html_label(edge$label, style$edge_label_wrap_width)
+        )
+      } else {
+        ""
+      }
+      sprintf(
+        '%s%s -> %s%s [color="%s", fontcolor="%s", fontsize=%.1f, style="%s", penwidth=%.2f, arrowhead="%s", arrowsize=%.2f%s];',
+        prefix, edge$from, prefix, edge$to,
+        edge_style$colour, edge_style$colour,
+        style$edge_label_size, edge_style$line, edge_style$width,
+        edge_style$head, style$arrow_size, label_attribute
+      )
+    }, character(1))
+
+    case_colour <- style$case_border
+    case_badge <- sprintf(
+      '%sbadge [label=%s, shape="box", style="rounded,filled", fillcolor="%s", color="%s", fontcolor="%s", fontsize=%.1f, penwidth=1.1, margin=0.07];',
+      prefix,
+      validation_html_label(spec$case, 12L),
+      style$case_fill, style$case_border, style$case_font_colour,
+      style$case_title_size
+    )
+    badge_anchor <- sprintf(
+      '%sbadge -> %s%s [style="invis", weight=80];',
+      prefix, prefix, spec$nodes$id[1]
+    )
+    case_label <- paste0(
+      spec$case, " — ", spec$title, " [", spec$outcome, "]"
+    )
+    paste0(
+      "subgraph cluster_", prefix, " {\n",
+      "label=", validation_html_label(case_label, style$case_title_wrap_width),
+      "; labelloc=\"t\"; labeljust=\"l\"; color=\"", case_colour,
+      "\"; fontcolor=\"", case_colour,
+      "\"; fontsize=", style$case_title_size,
+      "; penwidth=", style$cluster_border_width,
+      "; style=\"rounded\"; margin=", style$cluster_margin, ";\n",
+      case_badge, "\n",
+      paste(node_lines, collapse = "\n"), "\n",
+      paste(edge_lines, collapse = "\n"), "\n",
+      badge_anchor, "\n}"
+    )
+  }, character(1))
+
+  dot <- paste0(
+    "digraph G {\n",
+    "graph [rankdir=LR, bgcolor=\"", style$background_colour,
+    "\", pad=", style$graph_padding,
+    ", pack=true, packmode=\"array_u2\", newrank=true",
+    ", nodesep=", style$node_separation,
+    ", ranksep=", style$rank_separation, "];\n",
+    "node [style=\"rounded,filled\", fontname=\"", style$font_name,
+    "\", fontsize=", style$node_font_size,
+    ", width=", style$node_width, ", height=", style$node_height,
+    ", margin=", style$node_padding, "];\n",
+    "edge [fontname=\"", style$font_name, "\"];\n",
+    paste(cluster_blocks, collapse = "\n"), "\n}"
+  )
+
+  grViz(dot, width = style$widget_width, height = style$pair_height_px)
+}
+```
+
+The overview is case-level, so the positive and negative branches in Cases 01
+and 02 each contribute to one formal validation case rather than being counted
+as separate cases.
+
+```{r validation-control-parameters, include=FALSE}
+# ================= USER-EDITABLE: VALIDATION CONTROLS ==================
+validation_style <- list(
+  # Status overview colours
+  outcome_colours = c(
+    "Formal pass" = "#00BFFF",
+    "Partial match" = "#BA55D3",
+    "Informative non-pass" = "#FF3E96"
+  ),
+
+  # Status-overview bar plot
+  outcome_figure_width = 10, outcome_figure_height = 3.5,
+  outcome_output_width = "100%",
+  outcome_bar_width = 0.64,
+  outcome_label_colour = "#111111", outcome_label_size = 4,
+  outcome_label_vjust = -0.35,
+  outcome_y_breaks = 0:5, outcome_y_limit = 5.7,
+  outcome_title_colour = "#18232D", outcome_title_size = 12.5,
+  outcome_axis_text_colour = "#303841", outcome_axis_text_size = 11,
+
+  # Figure size and background
+  widget_width = "100%", pair_height_px = 340,
+  background_colour = "#FFFFFF", graph_padding = 0.14,
+  cluster_margin = 12, cluster_border_width = 1.3,
+
+  # Node colours
+  donor_fill = "deepskyblue3", donor_border = "#00688B",
+  donor_font_colour = "#FFFFFF",
+  negative_fill = "#FFFFFF", negative_border = "#111111",
+  negative_font_colour = "#111111",
+  precursor_fill = "thistle1", precursor_border = "#BA55D3",
+  precursor_font_colour = "#111111",
+  alternative_fill = "snow2", alternative_border = "#73737D",
+  alternative_font_colour = "#111111",
+  recipient_fill = "slateblue3", recipient_border = "#473C8B",
+  recipient_font_colour = "#FFFFFF",
+  target_fill = "rosybrown1", target_border = "#CD5C8A",
+  target_font_colour = "#111111",
+  case_fill = "#FFFFFF", case_border = "#111111",
+  case_font_colour = "#111111",
+
+  # Node shape, size and text
+  node_shape = "box", precursor_shape = "ellipse",
+  target_shape = "doublecircle",
+  node_width = 1.15, node_height = 0.40, node_padding = 0.07,
+  node_border_width = 1.1, node_font_size = 12,
+  label_wrap_width = 23, case_title_size = 11,
+  case_title_wrap_width = 48,
+
+  # Arrow colours and line styles
+  retained_edge_colour = "#104E8B",
+  confirmed_absent_edge_colour = "#111111",
+  partial_edge_colour = "#BA55D3",
+  not_recovered_edge_colour = "#FF3E96",
+  context_edge_colour = "#73737D",
+  retained_edge_width = 2.5, absent_edge_width = 2.0,
+  partial_edge_width = 2.2, missing_edge_width = 2.0,
+  context_edge_width = 1.5,
+  arrow_head = "vee", arrow_size = 0.72,
+  edge_label_size = 10, edge_label_wrap_width = 18,
+
+  # Network spacing and font
+  rank_separation = 0.90, node_separation = 0.18,
+  font_name = "Arial"
+)
+# =======================================================================
+```
+
+```{r validation-outcome-plot, fig.width=validation_style$outcome_figure_width, fig.height=validation_style$outcome_figure_height, out.width=validation_style$outcome_output_width}
+p_validation_outcomes <- ggplot(
+  validation_outcomes, aes(outcome, cases, fill = outcome)
+) +
+  geom_col(width = validation_style$outcome_bar_width) +
+  geom_text(
+    aes(label = cases),
+    vjust = validation_style$outcome_label_vjust,
+    fontface = "bold",
+    size = validation_style$outcome_label_size,
+    colour = validation_style$outcome_label_colour
+  ) +
+  scale_fill_manual(values = validation_style$outcome_colours, drop = FALSE) +
+  scale_y_continuous(
+    breaks = validation_style$outcome_y_breaks,
+    limits = c(0, validation_style$outcome_y_limit),
+    expand = expansion(mult = c(0, 0))
+  ) +
+  labs(
+    title = "Eight literature-defined workflow validation cases",
+    subtitle = "Five formal passes; one partial pathway match; two informative non-passes",
+    x = NULL, y = "Cases"
+  ) +
+  theme_science() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(
+      colour = validation_style$outcome_title_colour,
+      size = validation_style$outcome_title_size
+    ),
+    axis.text = element_text(
+      colour = validation_style$outcome_axis_text_colour,
+      size = validation_style$outcome_axis_text_size
+    )
+  )
+
+p_validation_outcomes
+```
+
+Cases 01 and 02 were matched triad controls expected to retain a
+literature-supported positive branch while excluding a biologically
+unsupported donor or recipient branch; the workflow reproduced both outcomes.
+Cases 03--05 were independent positive controls representing
+succinate-to-propionate, acetate-to-butyrate, and
+lactate-to-hydrogen-sulfide cross-feeding, and all three expected relationships
+were recovered. Case 06 was expected to recover the literature-described
+*S. gordonii*--ornithine--*F. nucleatum* pathway, but the ornithine donor edge
+was not retained. Instead, the GEMs supported a potential alternative
+*S. gordonii*--L-arginine--*F. nucleatum* route to putrescine, resulting in a
+partial match. Cases 07 and 08 recovered recipient-side
+indole-3-propionate and deoxycholate production potential, respectively, but
+did not recover the literature-described indole-3-lactate or cholate donor
+edges and were classified as informative non-passes. Overall, five cases
+passed formally, one produced a partial pathway match, and two exposed
+donor-side limitations in the available GEMs or workflow.
+
+**Figure V1. Pipeline-validation outcomes.** Bars give the number of the eight
+literature-defined cases classified as a formal pass, partial pathway match, or
+informative non-pass. Cases 01 and 02 are counted once each even though each
+contains both a positive and negative branch. Colours indicate outcome class
+only and do not quantify biological effect size.
+
+The pathway panels use four edge meanings: deep-sky-blue solid arrows are
+expected relationships retained by the workflow; black dashed T-bars are
+expected null relationships correctly excluded; medium-orchid arrows are
+recovered partial or recipient-side results; and violet-red dashed T-bars are
+literature-expected edges that were not recovered. Grey dashed arrows provide
+literature-route context only.
+
+#### Validation cases 01--02
+
+```{r validation-cases-01-02}
+network_with_downloads(
+  make_validation_composite(validation_case_specs[1:2], validation_style),
+  "figure_V2_validation_cases_01_02"
+)
+```
+
+**Figure V2. Matched triad validation controls.** Case 01 holds the recipient
+constant and contrasts a retained *Bifidobacterium adolescentis* L2-32
+L-lactate donor with an excluded *Paraprevotella xylaniphila* YIT 11841 donor.
+Case 02 holds the donor constant and contrasts retained L-lactate use by
+*Eubacterium hallii* L2-7 with the excluded negative recipient
+*Phascolarctobacterium succinatutens* YIT 12067. A dashed T-bar denotes the
+prespecified absent relationship and therefore contributes to a formal pass.
+
+#### Validation cases 03--04
+
+```{r validation-cases-03-04}
+network_with_downloads(
+  make_validation_composite(validation_case_specs[3:4], validation_style),
+  "figure_V3_validation_cases_03_04"
+)
+```
+
+**Figure V3. Independent short-chain-fatty-acid validation anchors.** Case 03
+shows the retained *P. xylaniphila* YIT 11841 → succinate → *P. succinatutens*
+YIT 12067 → propionate relationship. Case 04 shows the retained
+*Bifidobacterium longum* NCC2705 → acetate → *Eubacterium rectale* ATCC 33656
+→ butyrate relationship. Solid arrows denote retained expected components.
+
+#### Validation case 05
+
+```{r validation-case-05}
+network_with_downloads(
+  make_validation_composite(validation_case_specs[5], validation_style),
+  "figure_V4_validation_case_05"
+)
+```
+
+**Figure V4. Hydrogen-sulfide validation anchor.** Case 05
+retained the expected *B. adolescentis* L2-32 → L-lactate → *Desulfovibrio
+piger* ATCC 29098 → hydrogen-sulfide relationship.
+
+#### Validation cases 06--08
+
+```{r validation-cases-06-08}
+network_with_downloads(
+  make_validation_composite(validation_case_specs[6:8], validation_style),
+  "figure_V5_validation_cases_06_08"
+)
+```
+
+**Figure V5. Partial and informative non-pass validation cases.** Case 06
+recovered putrescine-production potential and a GEM-supported potential
+alternative *S. gordonii* CH1 → L-arginine → *F. nucleatum* ATCC 25586 route,
+but did not recover the literature-described *S. gordonii* CH1 → ornithine
+donor edge. Case 07 recovered indole-3-propionate-production potential in
+*Clostridium sporogenes* ATCC 15579, but the donor GEM did not represent the
+expected indole-3-lactate metabolite. Case 08 recovered
+deoxycholate-production potential and identified cholate on the recipient
+side, but cholate production was not retained for *Bacteroides
+thetaiotaomicron* VPI-5482. Violet-red dashed T-bars mark the expected donor
+components that were not recovered.
+
+```{r validation-evidence-table, results='asis'}
+validation_table <- validation_summary |>
+  transmute(
+    Case = case,
+    Donor = donor,
+    Precursor = precursor,
+    Recipient = recipient,
+    Target = target,
+    `Literature expectation` = literature_expectation,
+    `Workflow result` = workflow_result,
+    Conclusion = conclusion,
+    Reference = primary_reference
+  )
+
+validation_table$Reference <- gsub(
+  "(https://doi.org/[^; ]+)",
+  "<a href='\\1' target='_blank'>\\1</a>",
+  validation_table$Reference,
+  perl = TRUE
+)
+
+cat(as.character(tags$details(
+  style = "max-width:100%;overflow:hidden;margin-bottom:1em;",
+  tags$summary("Open the complete 10-row validation evidence table"),
+  tags$div(
+    style = "max-width:100%;overflow-x:auto;",
+    HTML(kable(
+      validation_table, format = "html", escape = FALSE, row.names = FALSE,
+      table.attr = paste0(
+        "class='table table-striped table-bordered table-condensed' ",
+        "style='font-size:10.5px;width:max-content;min-width:100%;'"
+      )
+    ))
+  )
+)))
+```
+
+### CANNEX cross-feeding analysis
+
+Sequence and model refinement yielded a final 29-GEM Core-6 panel representing
+four analyzed ASVs and a 37-GEM Core-15 panel representing seven ASVs. The core
+workflow evaluated 6,517 eligible different-species model tests in Core-6 and
+20,184 in Core-15, retaining 2,793 (42.9%) and 6,688 (33.1%) model-level
+potential edges, respectively. After species-level collapse, these corresponded
+to 95 Core-6 and 554 Core-15 directional donor–precursor–recipient–target
+relationships. Because the two taxon sets overlap, their records were analyzed
+and reported separately rather than summed as independent relationships.
+
+#### Taxon refinement
+
+```{r taxon-refinement-parameters, include=FALSE}
+# ================= USER-EDITABLE: FIGURE A — TAXA =====================
+taxon_plot_style <- list(
+  # Figure size
+  figure_width = 12, figure_height = 4.8, output_width = "100%",
+
+  # Bars and count labels
+  bar_fill = manuscript_palette$deepskyblue,
+  bar_border = manuscript_palette$black,
+  bar_width = 0.67, bar_border_width = 0.25,
+  count_label_colour = manuscript_palette$black,
+  count_label_size = 3.5, count_label_hjust = -0.28,
+
+  # Axes, facets and title
+  y_upper_expansion = 0.16, y_break_count = 4,
+  title_colour = "#18232D", title_size = 12.5,
+  axis_text_colour = "#303841", axis_text_size = 11,
+  axis_title_colour = "#303841", axis_title_size = 11,
+  facet_text_colour = "#25313C", facet_text_size = 11,
+  facet_fill = "#EFF2F4"
+)
+# ======================================================================
+```
+
+```{r taxon-refinement-plot, fig.width=taxon_plot_style$figure_width, fig.height=taxon_plot_style$figure_height, out.width=taxon_plot_style$output_width}
+taxa <- data.frame(
+  analysis = c(rep("Core-6", 2), rep("Core-15", 3)),
+  stage = c(
+    "Locked taxa", "Analyzed ASVs",
+    "Locked taxa", "Genus/species eligible", ">=99% 16S match"
+  ),
+  count = c(6, 4, 15, 13, 7)
+)
+taxa$analysis <- factor(taxa$analysis, levels = c("Core-6", "Core-15"))
+taxa$stage <- factor(
+  taxa$stage,
+  levels = rev(c("Locked taxa", "Genus/species eligible", "Analyzed ASVs", ">=99% 16S match"))
+)
+
+p_taxa <- ggplot(taxa, aes(stage, count)) +
+  geom_col(
+    width = taxon_plot_style$bar_width,
+    fill = taxon_plot_style$bar_fill,
+    colour = taxon_plot_style$bar_border,
+    linewidth = taxon_plot_style$bar_border_width
+  ) +
+  geom_text(
+    aes(label = count),
+    hjust = taxon_plot_style$count_label_hjust,
+    fontface = "bold",
+    size = taxon_plot_style$count_label_size,
+    colour = taxon_plot_style$count_label_colour
+  ) +
+  facet_wrap(~analysis, nrow = 1, scales = "free_x") +
+  coord_flip(clip = "off") +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, taxon_plot_style$y_upper_expansion)),
+    breaks = pretty_breaks(taxon_plot_style$y_break_count)
+  ) +
+  labs(title = "A  Taxon refinement", x = NULL, y = "Count") +
+  theme_science() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(
+      colour = taxon_plot_style$title_colour,
+      size = taxon_plot_style$title_size
+    ),
+    axis.text = element_text(
+      colour = taxon_plot_style$axis_text_colour,
+      size = taxon_plot_style$axis_text_size
+    ),
+    axis.title = element_text(
+      colour = taxon_plot_style$axis_title_colour,
+      size = taxon_plot_style$axis_title_size
+    ),
+    strip.text = element_text(
+      colour = taxon_plot_style$facet_text_colour,
+      size = taxon_plot_style$facet_text_size,
+      face = "bold"
+    ),
+    strip.background = element_rect(
+      fill = taxon_plot_style$facet_fill, colour = NA
+    )
+  )
+
+p_taxa
+```
+
+Core-6 retained four of the six locked ASVs for analysis. For Core-15, 13 of 15
+locked ASVs had genus- or species-level assignments eligible for refinement,
+and seven met the prespecified complete-coverage and ≥99% 16S identity rule.
+
+**Figure A. Taxon refinement for the two CANNEX analysis sets.** Bars show the
+number of taxa or ASVs retained at each prespecified refinement stage. Core-6
+and Core-15 are shown in separate facets because they are overlapping analysis
+sets and passed through different intermediate selection stages. Bar height
+represents counts; it does not represent abundance or effect size.
+
+#### GEM selection and QC
+
+```{r gem-selection-parameters, include=FALSE}
+# ================== USER-EDITABLE: FIGURE B — GEMS ====================
+gem_plot_style <- list(
+  # Figure size
+  figure_width = 12, figure_height = 4.8, output_width = "100%",
+
+  # Bars and count labels
+  bar_fill = manuscript_palette$lightblue,
+  bar_border = manuscript_palette$black,
+  bar_width = 0.67, bar_border_width = 0.25,
+  count_label_colour = manuscript_palette$black,
+  count_label_size = 3.5, count_label_hjust = -0.28,
+
+  # Axes, facets and title
+  y_upper_expansion = 0.16, y_break_count = 4,
+  title_colour = "#18232D", title_size = 12.5,
+  axis_text_colour = "#303841", axis_text_size = 11,
+  axis_title_colour = "#303841", axis_title_size = 11,
+  facet_text_colour = "#25313C", facet_text_size = 11,
+  facet_fill = "#EFF2F4"
+)
+# ======================================================================
+```
+
+```{r gem-selection-plot, fig.width=gem_plot_style$figure_width, fig.height=gem_plot_style$figure_height, out.width=gem_plot_style$output_width}
+
+gems <- data.frame(
+  analysis = c(rep("Core-6", 3), rep("Core-15", 2)),
+  stage = c(
+    "Candidate/selected GEMs", "Raw-XML QC pass", "Final GEMs",
+    "Candidate/selected GEMs", "Raw-XML QC pass"
+  ),
+  count = c(40, 30, 29, 50, 37)
+)
+gems$analysis <- factor(gems$analysis, levels = c("Core-6", "Core-15"))
+gems$stage <- factor(
+  gems$stage,
+  levels = rev(c("Candidate/selected GEMs", "Raw-XML QC pass", "Final GEMs"))
+)
+
+p_gems <- ggplot(gems, aes(stage, count)) +
+  geom_col(
+    width = gem_plot_style$bar_width,
+    fill = gem_plot_style$bar_fill,
+    colour = gem_plot_style$bar_border,
+    linewidth = gem_plot_style$bar_border_width
+  ) +
+  geom_text(
+    aes(label = count),
+    hjust = gem_plot_style$count_label_hjust,
+    fontface = "bold",
+    size = gem_plot_style$count_label_size,
+    colour = gem_plot_style$count_label_colour
+  ) +
+  facet_wrap(~analysis, nrow = 1, scales = "free_x") +
+  coord_flip(clip = "off") +
+  scale_y_continuous(
+    expand = expansion(mult = c(0, gem_plot_style$y_upper_expansion)),
+    breaks = pretty_breaks(gem_plot_style$y_break_count)
+  ) +
+  labs(title = "B  GEM selection and QC", x = NULL, y = "Count") +
+  theme_science() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(
+      colour = gem_plot_style$title_colour,
+      size = gem_plot_style$title_size
+    ),
+    axis.text = element_text(
+      colour = gem_plot_style$axis_text_colour,
+      size = gem_plot_style$axis_text_size
+    ),
+    axis.title = element_text(
+      colour = gem_plot_style$axis_title_colour,
+      size = gem_plot_style$axis_title_size
+    ),
+    strip.text = element_text(
+      colour = gem_plot_style$facet_text_colour,
+      size = gem_plot_style$facet_text_size,
+      face = "bold"
+    ),
+    strip.background = element_rect(
+      fill = gem_plot_style$facet_fill, colour = NA
+    )
+  )
+
+p_gems
+```
+
+Of 40 candidate Core-6 GEMs, 30 passed raw XML parsing and 29 remained after
+the completed sequence-refinement workflow. Of 50 sequence-selected Core-15
+GEMs, 37 passed identical raw XML QC and comprised the final Core-15 panel.
+Excluded models were not repaired or rewritten.
+
+**Figure B. GEM selection and source-file quality control.** Bars report
+candidate or sequence-selected AGORA2 v2.01 GEMs, models passing unmodified raw
+SBML/XML parsing, and the final analysis panel where an additional refinement
+stage applied. The Core-15 raw-XML-QC count is also its final panel size. The
+same file-integrity rule was used for both analysis sets.
+
+#### Core-screen retention
+
+```{r core-screen-retention-parameters, include=FALSE}
+# =============== USER-EDITABLE: FIGURE C — RETENTION ==================
+retention_plot_style <- list(
+  # Figure size
+  figure_width = 5.5, figure_height = 2.25, output_width = "50%",
+
+  # Stacked bars
+  bar_colours = c(
+    "Not retained" = manuscript_palette$lightblue,
+    "Retained" = manuscript_palette$mediumorchid
+  ),
+  bar_border = manuscript_palette$black,
+  bar_width = 0.40, bar_border_width = 0.25,
+
+  # Labels and text
+  retained_label_colour = manuscript_palette$white,
+  not_retained_label_colour = manuscript_palette$black,
+  label_size = 2.55, label_lineheight = 0.92,
+  title_colour = "#18232D", title_size = 9.0,
+  subtitle_colour = "#30303A", subtitle_size = 7.0,
+  axis_text_colour = "#303841", axis_text_size = 7.0,
+  axis_title_colour = "#303841", axis_title_size = 7.5,
+  legend_text_colour = "#303841", legend_text_size = 7.0,
+  legend_key_height_cm = 0.30
+)
+# ======================================================================
+```
+
+```{r core-screen-retention-plot, fig.width=retention_plot_style$figure_width, fig.height=retention_plot_style$figure_height, out.width=retention_plot_style$output_width}
+
+screen <- data.frame(
+  analysis = rep(c("Core-6", "Core-15"), each = 2),
+  status = rep(c("Retained", "Not retained"), 2),
+  count = c(2793, 6517 - 2793, 6688, 20184 - 6688)
+)
+screen$total <- ave(screen$count, screen$analysis, FUN = sum)
+screen$proportion <- screen$count / screen$total
+screen$label <- ifelse(
+  screen$status == "Retained",
+  paste0(comma(screen$count), "\n", percent(screen$proportion, accuracy = 0.1)),
+  paste0(comma(screen$count), "\nnot retained")
+)
+screen$status <- factor(screen$status, levels = c("Not retained", "Retained"))
+screen$analysis <- factor(screen$analysis, levels = c("Core-15", "Core-6"))
+
+p_screen <- ggplot(screen, aes(analysis, count, fill = status)) +
+  geom_col(
+    position = "fill", width = retention_plot_style$bar_width,
+    colour = retention_plot_style$bar_border,
+    linewidth = retention_plot_style$bar_border_width
+  ) +
+  geom_text(
+    aes(label = label), position = position_fill(vjust = 0.5),
+    size = retention_plot_style$label_size,
+    lineheight = retention_plot_style$label_lineheight,
+    colour = ifelse(
+      screen$status == "Retained",
+      retention_plot_style$retained_label_colour,
+      retention_plot_style$not_retained_label_colour
+    ),
+    fontface = ifelse(screen$status == "Retained", "bold", "plain")
+  ) +
+  coord_flip() +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = retention_plot_style$bar_colours) +
+  labs(
+    title = "C  Eligible model tests retained by the core screen",
+    subtitle = "Core-6: 2,793/6,517; Core-15: 6,688/20,184",
+    x = NULL,
+    y = "Eligible model tests (%)"
+  ) +
+  theme_science() +
+  theme(
+    plot.title = element_text(
+      colour = retention_plot_style$title_colour,
+      size = retention_plot_style$title_size
+    ),
+    plot.subtitle = element_text(
+      colour = retention_plot_style$subtitle_colour,
+      size = retention_plot_style$subtitle_size
+    ),
+    axis.text = element_text(
+      colour = retention_plot_style$axis_text_colour,
+      size = retention_plot_style$axis_text_size
+    ),
+    axis.title = element_text(
+      colour = retention_plot_style$axis_title_colour,
+      size = retention_plot_style$axis_title_size
+    ),
+    legend.text = element_text(
+      colour = retention_plot_style$legend_text_colour,
+      size = retention_plot_style$legend_text_size
+    ),
+    legend.key.height = grid::unit(
+      retention_plot_style$legend_key_height_cm, "cm"
+    )
+  )
+
+p_screen
+```
+
+The workflow retained 2,793 of 6,517 eligible Core-6 model tests (42.9%) and
+6,688 of 20,184 eligible Core-15 tests (33.1%). These records represent
+model-level structural-potential tests before species-level collapse.
+
+**Figure C. Retention of eligible model-level cross-feeding tests.** Stacked
+bars show the proportion of different-species donor tests retained or not
+retained by the complete six-stage workflow. Labels provide exact counts and
+the retained percentage within each analysis set. Core-6 and Core-15 are not
+pooled because their taxon and GEM panels overlap.
+
+#### Revised literature-classification counts
+
+```{r exact-count-table, results='asis'}
+literature_totals <- data.frame(
+  Analysis = c("Core-6", "Core-15"),
+  `Final relationships` = c(95, 554),
+  `Case 1: donor only` = c(0, 5),
+  `Case 2: both supported` = c(9, 11),
+  `No qualifying donor support` = c(86, 538),
+  `Any qualifying donor support` = c(9, 16),
+  check.names = FALSE
+)
+
+kable(
+  literature_totals,
+  format = "html",
+  align = c("l", "r", "r", "r", "r", "r"),
+  caption = "Overall relationship counts under the revised literature rule"
+) |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "left"
+  )
+
+exact_counts <- data.frame(
+  Analysis = c(
+    rep("Core-6", 4),
+    rep("Core-15", 4)
+  ),
+  Metabolite = rep(c("GABA", "GABA", "Butyrate", "Butyrate"), 2),
+  `Root class` = rep(c("Single-root", "Multi-root"), 4),
+  `Final relationships` = c(5, 44, 22, 24, 28, 293, 100, 133),
+  `Case 1: donor only` = c(0, 0, 0, 0, 0, 5, 0, 0),
+  `Case 2: both supported` = c(2, 2, 3, 2, 0, 5, 6, 0),
+  `No qualifying donor support` = c(3, 42, 19, 22, 28, 283, 94, 133),
+  `Qualifying donor support (%)` = c("40.0", "4.5", "13.6", "8.3", "0.0", "3.4", "6.0", "0.0"),
+  check.names = FALSE
+)
+
+kable(
+  exact_counts,
+  format = "html",
+  align = c("l", "l", "l", "r", "r", "r", "r", "r"),
+  caption = "Re-analysed relationship counts used in the Sankey plot"
+) |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "left"
+  )
+```
+
+“No qualifying donor support” means that the targeted search did not identify
+qualifying donor-to-exact-precursor evidence. This includes relationships for
+which only the recipient-to-target reaction is supported. It is an evidence-gap
+label, not proof that the modeled relationship is biologically impossible.
+
+#### Metabolite, precursor-class and literature-support Sankey
+
+```{r sankey-data, include=FALSE}
+
+sankey <- exact_counts |>
+  transmute(
+    analysis_set = Analysis,
+    target_metabolite = Metabolite,
+    precursor_class = recode(
+      `Root class`, "Single-root" = "Single", "Multi-root" = "Multi"
+    ),
+    Yes = `Case 1: donor only` + `Case 2: both supported`,
+    No = `No qualifying donor support`
+  ) |>
+  pivot_longer(
+    cols = c(Yes, No),
+    names_to = "literature_support",
+    values_to = "count"
+  ) |>
+  filter(count > 0)
+```
+
+Edit the following parameter chunk when you want to change the Sankey appearance. The plotting chunk immediately after it should not need to be edited.
+
+```{r sankey-appearance-parameters, include=FALSE}
+# ====================== USER-EDITABLE SANKEY PARAMETERS ======================
+sankey_style <- list(
+  # Flow/ribbon colours
+  flow_colours = c(
+    "GABA" = "#BA55D3",
+    "Butyrate" = "#00BFFF"
+  ),
+
+  # Sankey node/bar colours: all strata are intentionally white
+  node_bar_colours = c(
+    "Core-6" = "#FFFFFF",
+    "Core-15" = "#FFFFFF",
+    "GABA" = "#FFFFFF",
+    "Butyrate" = "#FFFFFF",
+    "Single" = "#FFFFFF",
+    "Multi" = "#FFFFFF",
+    "Yes" = "#FFFFFF",
+    "No" = "#FFFFFF"
+  ),
+
+  # Flow/ribbon appearance
+  flow_alpha = 0.40,       # 0 = transparent; 1 = opaque
+  flow_width = 0.3,
+  flow_curve_position = 0.47,
+
+  # Node/bar appearance
+  node_bar_width = 0.4,
+  node_bar_border_colour = "#111111",
+  node_bar_border_width = 0.55,
+
+  # Text appearance
+  node_label_colour = "#111111",
+  node_label_size = 2.57,
+  node_label_lineheight = 0.88,
+  axis_text_colour = "#111111",
+  axis_text_size = 11,
+  title_colour = "#111111",
+  title_size = 12.5,
+  subtitle_colour = "#30303A",
+  subtitle_size = 10.5,
+  caption_colour = "#30303A",
+  caption_size = 9.0,
+
+  # Overall Sankey figure dimensions used during knitting
+  figure_width = 14.2,
+  figure_height = 7
+)
+
+knitr::opts_chunk$set(
+  fig.width = sankey_style$figure_width,
+  fig.height = sankey_style$figure_height
+)
+# ============================================================================
+```
+
+```{r sankey-plot}
+p_sankey <- ggplot(
+  sankey,
+  aes(
+    y = count,
+    axis1 = analysis_set,
+    axis2 = target_metabolite,
+    axis3 = precursor_class,
+    axis4 = literature_support
+  )
+) +
+  geom_alluvium(
+    aes(fill = target_metabolite),
+    width = sankey_style$flow_width,
+    alpha = sankey_style$flow_alpha,
+    knot.pos = sankey_style$flow_curve_position
+  ) +
+  scale_fill_manual(values = sankey_style$flow_colours, drop = FALSE, guide = "none") +
+  ggnewscale::new_scale_fill() +
+  geom_stratum(
+    aes(fill = after_stat(stratum)),
+    width = sankey_style$node_bar_width,
+    colour = sankey_style$node_bar_border_colour,
+    linewidth = sankey_style$node_bar_border_width
+  ) +
+  geom_text(
+    stat = "stratum",
+    aes(
+      label = paste0(
+        as.character(after_stat(stratum)), "\n", comma(after_stat(count)), " (",
+        percent(after_stat(prop), accuracy = 0.1), ")"
+      )
+    ),
+    size = sankey_style$node_label_size,
+    lineheight = sankey_style$node_label_lineheight,
+    colour = sankey_style$node_label_colour
+  ) +
+  scale_x_discrete(
+    limits = c(
+      "Analysis set", "Target metabolite", "Precursors", "Literature support"
+    ),
+    expand = expansion(mult = c(0.07, 0.07))
+  ) +
+  scale_fill_manual(values = sankey_style$node_bar_colours, drop = FALSE, guide = "none") +
+  labs(
+    title = "D-E  Analysis set, metabolite, precursors and literature support",
+    subtitle = paste0(
+      "Ribbon width represents analysis-specific species-level relationship records; ",
+      "ribbons are coloured by target metabolite"
+    ),
+    x = NULL,
+    y = "Analysis-specific relationship records",
+    caption = paste(
+      strwrap(
+        paste0(
+          "Yes combines Case 1 (donor-to-precursor support) and Case 2 (both terminal reactions supported); No means that no qualifying donor-to-exact-precursor evidence was identified. ",
+          "Recipient-to-target evidence alone is classified as No. Multi indicates that at least one retained recipient path required additional non-currency extracellular roots; it does not establish their community sources. ",
+          "The combined Sankey contains analysis-specific records from overlapping Core-6 and Core-15 sets and must not be interpreted as 649 unique biological relationships."
+        ),
+        width = 185
+      ),
+      collapse = "\n"
+    )
+  ) +
+  theme_science() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(
+      face = "bold",
+      colour = sankey_style$axis_text_colour,
+      size = sankey_style$axis_text_size
+    ),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.position = "none",
+    plot.title = element_text(
+      face = "bold",
+      colour = sankey_style$title_colour,
+      size = sankey_style$title_size
+    ),
+    plot.subtitle = element_text(
+      colour = sankey_style$subtitle_colour,
+      size = sankey_style$subtitle_size
+    ),
+    plot.caption = element_text(
+      colour = sankey_style$caption_colour,
+      size = sankey_style$caption_size,
+      hjust = 0,
+      margin = margin(t = 10)
+    )
+  )
+
+p_sankey
+```
+
+Across the 95 Core-6 relationships, 27 were single-precursor and 68 were
+multi-precursor; nine had qualifying donor evidence and also recipient-target
+support, while 86 lacked qualifying donor-to-exact-precursor evidence. Across
+the 554 Core-15 relationships, 128 were single-precursor and 426 were
+multi-precursor; 16 had qualifying donor evidence (five Case 1 and 11 Case 2),
+while 538 lacked qualifying donor evidence. The `No` category therefore
+describes the outcome of the targeted literature search rather than a negative
+biological conclusion.
+
+**Figure D–E. Distribution of CANNEX cross-feeding relationships by analysis
+set, target metabolite, precursor class, and literature support.** Ribbon width
+represents the number of analysis-specific species-level relationships, and
+ribbon colour identifies GABA (medium orchid) or butyrate (deep sky blue).
+White strata contain the category label, exact count, and within-axis
+percentage. `Single` indicates that at least one retained recipient path used
+only the focal precursor; `Multi` indicates that the retained paths required
+additional non-currency extracellular roots. Literature support is `Yes` when
+the donor-to-exact-precursor reaction is supported (Case 1 or Case 2) and `No`
+when no qualifying donor evidence was identified; recipient-to-target evidence
+alone remains `No`. Flow opacity is 0.4. Core-6 and Core-15 overlap and must not
+be summed as independent biological relationships.
+
+### Case-2 pathway visualisation
+
+These two metabolite-specific networks show **Case 2 only**: direct evidence supports both the
+donor-to-exact-precursor reaction and the recipient-to-target reaction. The
+displayed chain is **potential donor species → focal extracellular precursor →
+potential recipient species → target metabolite**. Edge colour identifies
+whether a pathway came from Core-6, Core-15, or both sets. Node fill colour
+identifies donor, precursor, recipient, and target roles. Because only Case 2 is
+drawn, both terminal reactions meet the literature rule; the middle transfer
+edge remains GEM-supported structural potential.
+
+Single-root and multi-root relationships are both retained, but the figure does
+not use `S/M` labels. A single-root relationship connects the focal precursor
+directly to the recipient. For a multi-root relationship, an additional box
+shows the exact displayed input combination (focal precursor plus the other
+required metabolite roots). A recipient GEM counts only if that same GEM has
+the exact target-production path and can import every root through an
+import-capable exchange and inward transport route. The displayed combination
+is selected reproducibly: fewest total roots first, then greatest complete-input
+recipient-GEM support, then greatest exact-path and pathway support, and finally
+alphabetical order. Every observed alternative root combination remains in the
+complete Case-2 table.
+
+```{r pathway-data-preparation, include=FALSE}
+if (!exists("crossfeeding_input_paths", inherits = TRUE)) {
+  stop(
+    "Run the 'input-folder-configuration' chunk before this chunk."
+  )
+}
+data_root <- crossfeeding_input_paths$data_root
+
+pathway_inputs <- c(
+  core6_workbook = file.path(
+    data_root, "crossfeeding_analysis_6", "batch1_pain_gutbrain_results.xlsx"
+  ),
+  core6_manifest = file.path(
+    data_root, "crossfeeding_analysis_6", "models_qc_passed", "model_manifest.tsv"
+  ),
+  core6_literature = file.path(
+    data_root, "crossfeeding_analysis_6", "batch1_single_root_literature_evidence.tsv"
+  ),
+  core15_posthoc = file.path(
+    data_root, "crossfeeding_analysis_15", "batch1_species_root_posthoc.json"
+  ),
+  core15_workbook = file.path(
+    data_root, "crossfeeding_analysis_15", "batch1_pain_gutbrain_results.xlsx"
+  ),
+  core15_literature = file.path(
+    data_root, "crossfeeding_analysis_15", "batch1_single_root_literature_evidence.tsv"
+  )
+)
+
+if (!all(file.exists(pathway_inputs))) {
+  stop(
+    "Missing verified pathway input(s): ",
+    paste(names(pathway_inputs)[!file.exists(pathway_inputs)], collapse = ", ")
+  )
+}
+
+expected_pathway_sha256 <- c(
+  core6_workbook = "3296897ac8a29282adec50d35b38305845e59ab605ed9f017031f6d8f4a101e5",
+  core6_manifest = "025da099f4944b0e5969a934e1bda5a6127ce128d4b2e7926cb6ce52f6a0eaac",
+  core6_literature = "d3f251b286fbeb91659860011fc4473e03d409c633541058c789b173d50c373a",
+  core15_posthoc = "945e5bac6ef2429779ba00f3b86a96c63b93a996494ea91d3a82e6b640a894aa",
+  core15_workbook = "2dfecf2a65985ba0dd2b384f012e071bf76cdc883358aaf3a6ccc88c683e1c3a",
+  core15_literature = "306f0668ff9f88a4d7c3fb7aa6240f0b8a7821c55c96f050f57ed7eb17832703"
+)
+observed_pathway_sha256 <- vapply(
+  pathway_inputs,
+  function(path) digest(file = path, algo = "sha256", serialize = FALSE),
+  character(1)
+)
+if (isTRUE(crossfeeding_strict_input_hash) &&
+    !identical(observed_pathway_sha256, expected_pathway_sha256)) {
+  changed <- names(observed_pathway_sha256)[
+    observed_pathway_sha256 != expected_pathway_sha256
+  ]
+  stop("Verified pathway input changed: ", paste(changed, collapse = ", "))
+}
+
+fmt_n_over_n <- function(numerator, denominator) {
+  sprintf("%d/%d", numerator, denominator)
+}
+
+# Reconstruct the locked Core-6 species-level relationships from the verified
+# workbook with the same post-hoc rules used in the Core-6 report.
+core6_results <- read_excel(
+  pathway_inputs[["core6_workbook"]], sheet = "Results", na = ""
+) |>
+  filter(decision == "Keep")
+core6_pathways <- read_excel(
+  pathway_inputs[["core6_workbook"]], sheet = "Candidate Pathways", na = ""
+) |>
+  mutate(
+    root_ids = coalesce(precursor_candidate_ids, ""),
+    root_count = if_else(
+      root_ids == "", 0L, str_count(root_ids, fixed(";")) + 1L
+    )
+  )
+core6_manifest <- read.delim(
+  pathway_inputs[["core6_manifest"]], check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+core6_denominators <- core6_manifest |>
+  count(species, name = "species_model_n")
+
+core6_edge_paths <- core6_results |>
+  separate_rows(recipient_path_ids, sep = ";\\s*") |>
+  rename(path_id = recipient_path_ids) |>
+  left_join(
+    select(core6_pathways, path_id, root_ids, root_count), by = "path_id"
+  ) |>
+  rowwise() |>
+  mutate(
+    focal_in_path = precursor_id %in% str_split(root_ids, ";\\s*")[[1]],
+    single_root_path = focal_in_path && root_count == 1L
+  ) |>
+  ungroup()
+
+if (any(is.na(core6_edge_paths$root_count)) ||
+    any(!core6_edge_paths$focal_in_path)) {
+  stop("A retained Core-6 edge lacks a linked path containing its focal precursor.")
+}
+
+core6_classes <- core6_edge_paths |>
+  group_by(
+    final_target_id, final_target, donor_species, precursor_id,
+    precursor_name, recipient_species
+  ) |>
+  summarise(
+    root_class = if_else(any(single_root_path), "single_root", "multi_root"),
+    .groups = "drop"
+  )
+
+core6_relationships <- core6_edge_paths |>
+  inner_join(
+    core6_classes,
+    by = c(
+      "final_target_id", "final_target", "donor_species", "precursor_id",
+      "precursor_name", "recipient_species"
+    )
+  ) |>
+  filter(root_class == "multi_root" | single_root_path) |>
+  group_by(
+    final_target_id, final_target, donor_species, precursor_id,
+    precursor_name, recipient_species, root_class
+  ) |>
+  summarise(
+    donor_support_n = n_distinct(donor_model_id),
+    recipient_support_n = n_distinct(recipient_model_id),
+    pair_support_n = n_distinct(paste(donor_model_id, recipient_model_id, sep = "|")),
+    supporting_donor_models = list(sort(unique(donor_model_id))),
+    supporting_recipient_models = list(sort(unique(recipient_model_id))),
+    supporting_pathway_count = n_distinct(path_id),
+    .groups = "drop"
+  ) |>
+  left_join(core6_denominators, by = c("donor_species" = "species")) |>
+  rename(donor_denominator = species_model_n) |>
+  left_join(core6_denominators, by = c("recipient_species" = "species")) |>
+  rename(recipient_denominator = species_model_n) |>
+  mutate(
+    pair_denominator = donor_denominator * recipient_denominator,
+    analysis = "Core-6"
+  )
+
+# Read the already-verified Core-15 species/root post-hoc result.
+core15_json <- fromJSON(
+  pathway_inputs[["core15_posthoc"]], simplifyDataFrame = TRUE
+)
+core15_pathways <- read_excel(
+  pathway_inputs[["core15_workbook"]], sheet = "Candidate Pathways", na = ""
+) |>
+  filter(decision == "Keep")
+core15_raw <- core15_json$relationships
+core15_relationships <- tibble(
+  final_target_id = core15_raw$final_target_id,
+  final_target = core15_raw$final_target,
+  donor_species = core15_raw$donor_species,
+  precursor_id = core15_raw$precursor_id,
+  precursor_name = core15_raw$precursor_name,
+  recipient_species = core15_raw$recipient_species,
+  root_class = core15_raw$root_class,
+  donor_support_n = core15_raw$donor_support$numerator,
+  donor_denominator = core15_raw$donor_support$denominator,
+  recipient_support_n = core15_raw$recipient_support$numerator,
+  recipient_denominator = core15_raw$recipient_support$denominator,
+  pair_support_n = core15_raw$model_pair_support$numerator,
+  pair_denominator = core15_raw$model_pair_support$denominator,
+  supporting_donor_models = core15_raw$supporting_donor_models,
+  supporting_recipient_models = core15_raw$supporting_recipient_models,
+  supporting_pathway_count = core15_raw$supporting_pathway_count,
+  analysis = "Core-15"
+)
+
+# Donor evidence is read from the locked evidence tables. It is applied to the
+# exact donor-species + precursor pair, independent of the downstream target.
+core6_literature_rows <- read.delim(
+  pathway_inputs[["core6_literature"]], check.names = FALSE,
+  stringsAsFactors = FALSE, na.strings = ""
+)
+core15_literature_rows <- read.delim(
+  pathway_inputs[["core15_literature"]], check.names = FALSE,
+  stringsAsFactors = FALSE, na.strings = ""
+)
+donor_literature_pairs <- bind_rows(
+  core6_literature_rows,
+  core15_literature_rows
+) |>
+  filter(literature_class == "direct_supported") |>
+  group_by(donor_species, precursor_id) |>
+  summarise(
+    donor_literature_citation = paste(sort(unique(citation)), collapse = "; "),
+    donor_literature_doi = paste(sort(unique(doi)), collapse = "; "),
+    .groups = "drop"
+  )
+
+# Recipient evidence is the accepted exact-strain or same-species evidence used
+# in the combined constituent-reaction literature review.
+recipient_literature_pairs <- tribble(
+  ~recipient_species, ~final_target_id, ~recipient_literature_citation, ~recipient_literature_doi,
+  "Agathobacter rectalis", "4abut", "Strandwitz et al. 2019", "10.1038/s41564-018-0307-3",
+  "Eubacterium rectale", "4abut", "Strandwitz et al. 2019", "10.1038/s41564-018-0307-3",
+  "Bacteroides ovatus", "4abut", "Otaru et al. 2021", "10.3389/fmicb.2021.656895",
+  "Agathobacter rectalis", "but", "Rivière et al. 2015", "10.1128/AEM.02089-15",
+  "Eubacterium rectale", "but", "Rivière et al. 2015", "10.1128/AEM.02089-15",
+  "Gemmiger formicilis", "but", "Gossling and Moore 1975", "10.1099/00207713-25-2-202",
+  "Roseburia hominis", "but", "Bhattacharya et al. 2022", "10.3390/microorganisms10122496"
+)
+
+all_pathway_relationships <- bind_rows(
+  core6_relationships,
+  core15_relationships
+) |>
+  left_join(
+    donor_literature_pairs, by = c("donor_species", "precursor_id")
+  ) |>
+  left_join(
+    recipient_literature_pairs,
+    by = c("recipient_species", "final_target_id")
+  ) |>
+  mutate(
+    donor_literature_supported = !is.na(donor_literature_citation),
+    recipient_literature_supported = !is.na(recipient_literature_citation),
+    literature_case = case_when(
+      donor_literature_supported & recipient_literature_supported ~
+        "Case 2: both supported",
+      donor_literature_supported ~ "Case 1: donor only",
+      TRUE ~ "No qualifying donor support"
+    ),
+    donor_support = fmt_n_over_n(donor_support_n, donor_denominator),
+    recipient_support = fmt_n_over_n(
+      recipient_support_n, recipient_denominator
+    ),
+    pair_support = fmt_n_over_n(pair_support_n, pair_denominator)
+  ) |>
+  arrange(analysis, final_target, root_class, donor_species,
+          precursor_name, recipient_species)
+
+case2_pathway_relationships <- all_pathway_relationships |>
+  filter(literature_case == "Case 2: both supported")
+case1_pathway_relationships <- all_pathway_relationships |>
+  filter(literature_case == "Case 1: donor only")
+no_donor_support_pathway_relationships <- all_pathway_relationships |>
+  filter(literature_case == "No qualifying donor support")
+
+# Recover the complete extracellular root sets from the locked candidate-pathway
+# sheets and join them to the Step-5 recipient import audits. A recipient model
+# supports a complete input set only when the same GEM contains the exact path
+# and every root has exchange import plus inward transport. For each Case-2
+# relationship, select one eligible display set deterministically: minimum root
+# count, maximum complete-input recipient-model support, maximum exact-path
+# support, maximum pathway support, then alphabetical order.
+candidate_root_paths <- bind_rows(
+  core6_pathways |>
+    transmute(
+      analysis = "Core-6", final_target_id = target_id,
+      recipient_model_id = model_id, path_id,
+      root_set_ids = coalesce(precursor_candidate_ids, ""),
+      root_set_names = coalesce(precursor_candidate_names, "")
+    ),
+  core15_pathways |>
+    transmute(
+      analysis = "Core-15", final_target_id = target_id,
+      recipient_model_id = model_id, path_id,
+      root_set_ids = coalesce(precursor_candidate_ids, ""),
+      root_set_names = coalesce(precursor_candidate_names, "")
+    )
+) |>
+  mutate(
+    root_count = if_else(
+      root_set_ids == "", 0L,
+      str_count(root_set_ids, fixed(";")) + 1L
+    ),
+    root_set_label = str_replace_all(root_set_names, ";\\s*", " + ")
+  )
+
+consumer_import_audits <- bind_rows(
+  read_excel(
+    pathway_inputs[["core6_workbook"]], sheet = "Consumer Audits", na = ""
+  ) |>
+    transmute(
+      analysis = "Core-6", final_target_id = target_id,
+      recipient_model_id = model_id,
+      importable_precursor_ids = coalesce(
+        as.character(importable_precursor_ids), ""
+      )
+    ),
+  read_excel(
+    pathway_inputs[["core15_workbook"]], sheet = "Consumer Audits", na = ""
+  ) |>
+    transmute(
+      analysis = "Core-15", final_target_id = target_id,
+      recipient_model_id = model_id,
+      importable_precursor_ids = coalesce(
+        as.character(importable_precursor_ids), ""
+      )
+    )
+)
+
+case2_root_options <- case2_pathway_relationships |>
+  select(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species, root_class, recipient_denominator,
+    supporting_recipient_models
+  ) |>
+  unnest_longer(
+    supporting_recipient_models, values_to = "recipient_model_id"
+  ) |>
+  inner_join(
+    candidate_root_paths,
+    by = c("analysis", "final_target_id", "recipient_model_id")
+  ) |>
+  inner_join(
+    consumer_import_audits,
+    by = c("analysis", "final_target_id", "recipient_model_id")
+  ) |>
+  rowwise() |>
+  mutate(
+    focal_in_root_set = precursor_id %in%
+      str_split(root_set_ids, ";\\s*")[[1]],
+    all_roots_importable = all(
+      str_split(root_set_ids, ";\\s*")[[1]] %in%
+        str_split(importable_precursor_ids, ";\\s*")[[1]]
+    )
+  ) |>
+  ungroup() |>
+  filter(
+    focal_in_root_set,
+    (root_class == "single_root" & root_count == 1L) |
+      (root_class == "multi_root" & root_count > 1L)
+  ) |>
+  group_by(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species, root_class, recipient_denominator,
+    root_set_ids, root_set_names, root_set_label, root_count
+  ) |>
+  summarise(
+    root_set_model_n = n_distinct(recipient_model_id),
+    root_set_path_n = n_distinct(path_id),
+    root_set_models = list(sort(unique(recipient_model_id))),
+    root_set_importable_model_n = n_distinct(
+      recipient_model_id[all_roots_importable]
+    ),
+    root_set_importable_models = list(sort(unique(
+      recipient_model_id[all_roots_importable]
+    ))),
+    .groups = "drop"
+  )
+
+case2_root_summaries <- case2_root_options |>
+  arrange(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species, root_count, desc(root_set_importable_model_n),
+    desc(root_set_model_n), desc(root_set_path_n), root_set_label
+  ) |>
+  group_by(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species
+  ) |>
+  summarise(
+    all_observed_root_sets = paste0(
+      root_set_label, " [exact path: ", root_set_model_n, "/",
+      recipient_denominator, "; every root importable: ",
+      root_set_importable_model_n, "/", root_set_model_n,
+      "]", collapse = " | "
+    ),
+    observed_root_set_n = n(),
+    import_eligible_root_set_n = sum(root_set_importable_model_n > 0L),
+    .groups = "drop"
+  )
+
+case2_display_roots <- case2_root_options |>
+  filter(root_set_importable_model_n > 0L) |>
+  arrange(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species, root_count, desc(root_set_importable_model_n),
+    desc(root_set_model_n), desc(root_set_path_n), root_set_label
+  ) |>
+  group_by(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species
+  ) |>
+  mutate(root_set_rank = row_number()) |>
+  ungroup() |>
+  filter(root_set_rank == 1L) |>
+  select(
+    analysis, final_target_id, donor_species, precursor_id,
+    recipient_species, displayed_root_set_ids = root_set_ids,
+    displayed_root_set = root_set_label,
+    displayed_root_count = root_count,
+    displayed_root_path_support_n = root_set_model_n,
+    displayed_root_support_n = root_set_importable_model_n,
+    displayed_root_path_n = root_set_path_n,
+    displayed_root_models = root_set_importable_models
+  )
+
+case2_pathway_relationships <- case2_pathway_relationships |>
+  left_join(
+    case2_display_roots,
+    by = c(
+      "analysis", "final_target_id", "donor_species", "precursor_id",
+      "recipient_species"
+    )
+  ) |>
+  left_join(
+    case2_root_summaries,
+    by = c(
+      "analysis", "final_target_id", "donor_species", "precursor_id",
+      "recipient_species"
+    )
+  )
+
+if (any(is.na(case2_pathway_relationships$displayed_root_set))) {
+  stop(
+    "A Case-2 relationship lacks an exact root set for which every root is importable."
+  )
+}
+
+displayed_multiroot_import_check <- case2_pathway_relationships |>
+  filter(displayed_root_count > 1L) |>
+  distinct(
+    analysis, final_target_id, recipient_species, displayed_root_set,
+    displayed_root_path_support_n, displayed_root_support_n,
+    recipient_denominator
+  ) |>
+  arrange(analysis, final_target_id, recipient_species, displayed_root_set)
+expected_multiroot_import_check <- tribble(
+  ~analysis, ~final_target_id, ~recipient_species, ~displayed_root_set,
+  ~displayed_root_path_support_n, ~displayed_root_support_n,
+  ~recipient_denominator,
+  "Core-6", "4abut", "Agathobacter rectalis", "Fumarate + Ammonium",
+  8L, 8L, 10L,
+  "Core-6", "but", "Agathobacter rectalis", "Acetate + L-glutamate",
+  3L, 3L, 10L,
+  "Core-15", "4abut", "Bacteroides ovatus", "Ammonium + Succinate",
+  2L, 2L, 4L,
+  "Core-15", "4abut", "Eubacterium rectale", "Ammonium + Succinate",
+  7L, 7L, 10L
+) |>
+  arrange(analysis, final_target_id, recipient_species, displayed_root_set)
+stopifnot(identical(
+  displayed_multiroot_import_check,
+  expected_multiroot_import_check
+))
+
+case2_normalized_keys <- case2_pathway_relationships |>
+  mutate(
+    donor_species_display = recode(
+      donor_species, "Eubacterium rectale" = "Agathobacter rectalis"
+    ),
+    recipient_species_display = recode(
+      recipient_species, "Eubacterium rectale" = "Agathobacter rectalis"
+    )
+  ) |>
+  count(
+    final_target_id, donor_species_display, precursor_id,
+    recipient_species_display,
+    name = "analysis_records"
+  )
+case2_unique_by_target <- case2_normalized_keys |>
+  count(final_target_id, name = "unique_pathways")
+
+# Fail loudly if the relationship-level reconstruction no longer matches the
+# locked post-hoc results and the accepted literature rule.
+pathway_count_check <- all_pathway_relationships |>
+  count(analysis, final_target, root_class, literature_case, name = "n")
+expected_pathway_count_check <- tribble(
+  ~analysis, ~final_target, ~root_class, ~literature_case, ~n,
+  "Core-6", "GABA", "single_root", "Case 2: both supported", 2L,
+  "Core-6", "GABA", "single_root", "No qualifying donor support", 3L,
+  "Core-6", "GABA", "multi_root", "Case 2: both supported", 2L,
+  "Core-6", "GABA", "multi_root", "No qualifying donor support", 42L,
+  "Core-6", "Butyrate", "single_root", "Case 2: both supported", 3L,
+  "Core-6", "Butyrate", "single_root", "No qualifying donor support", 19L,
+  "Core-6", "Butyrate", "multi_root", "Case 2: both supported", 2L,
+  "Core-6", "Butyrate", "multi_root", "No qualifying donor support", 22L,
+  "Core-15", "GABA", "single_root", "No qualifying donor support", 28L,
+  "Core-15", "GABA", "multi_root", "Case 1: donor only", 5L,
+  "Core-15", "GABA", "multi_root", "Case 2: both supported", 5L,
+  "Core-15", "GABA", "multi_root", "No qualifying donor support", 283L,
+  "Core-15", "Butyrate", "single_root", "Case 2: both supported", 6L,
+  "Core-15", "Butyrate", "single_root", "No qualifying donor support", 94L,
+  "Core-15", "Butyrate", "multi_root", "No qualifying donor support", 133L
+) |>
+  arrange(analysis, final_target, root_class, literature_case)
+stopifnot(
+  identical(
+    pathway_count_check |>
+      arrange(analysis, final_target, root_class, literature_case),
+    expected_pathway_count_check
+  ),
+  nrow(case2_pathway_relationships) == 20L,
+  sum(case2_pathway_relationships$displayed_root_count == 1L) == 11L,
+  sum(case2_pathway_relationships$displayed_root_count > 1L) == 9L,
+  nrow(case1_pathway_relationships) == 5L,
+  nrow(no_donor_support_pathway_relationships) == 624L,
+  nrow(case2_normalized_keys) == 20L,
+  all(case2_normalized_keys$analysis_records == 1L),
+  case2_unique_by_target$unique_pathways[
+    case2_unique_by_target$final_target_id == "4abut"
+  ] == 9L,
+  case2_unique_by_target$unique_pathways[
+    case2_unique_by_target$final_target_id == "but"
+  ] == 11L
+)
+
+actual_sankey_check <- all_pathway_relationships |>
+  mutate(
+    precursor_class = recode(
+      root_class, single_root = "Single-root", multi_root = "Multi-root"
+    ),
+    precursor_class = recode(
+      precursor_class, "Single-root" = "Single", "Multi-root" = "Multi"
+    ),
+    literature_support = if_else(
+      donor_literature_supported, "Yes", "No"
+    )
+  ) |>
+  count(
+    analysis_set = analysis,
+    target_metabolite = final_target,
+    precursor_class,
+    literature_support,
+    name = "count"
+  ) |>
+  arrange(
+    analysis_set, target_metabolite, precursor_class, literature_support
+  )
+expected_sankey_check <- sankey |>
+  mutate(count = as.integer(count)) |>
+  arrange(
+    analysis_set, target_metabolite, precursor_class, literature_support
+  )
+stopifnot(identical(actual_sankey_check, as_tibble(expected_sankey_check)))
+
+dot_escape <- function(x) {
+  x <- gsub("\\\\", "\\\\\\\\", as.character(x))
+  x <- gsub('"', '\\"', x, fixed = TRUE)
+  gsub("\n", "\\n", x, fixed = TRUE)
+}
+
+wrap_dot_label <- function(x, width = 18L) {
+  dot_escape(str_wrap(as.character(x), width = width))
+}
+
+edge_width_from_frequency <- function(frequency, style) {
+  if (frequency <= style$frequency_break_low) return(style$edge_width_low)
+  if (frequency <= style$frequency_break_mid) return(style$edge_width_mid)
+  style$edge_width_high
+}
+
+analysis_membership <- function(x) {
+  values <- sort(unique(as.character(x)))
+  if ("Both" %in% values || all(c("Core-6", "Core-15") %in% values)) {
+    return("Both")
+  }
+  values[[1]]
+}
+
+analysis_edge_colour <- function(analysis_class, style) {
+  switch(
+    analysis_class,
+    "Core-6" = style$core6_edge_colour,
+    "Core-15" = style$core15_edge_colour,
+    "Both" = style$both_sets_edge_colour,
+    style$both_sets_edge_colour
+  )
+}
+
+make_supported_pathway_network <- function(
+    relationships, target_id, target_label, style) {
+  rel_raw <- relationships |>
+    filter(final_target_id == target_id) |>
+    mutate(
+      donor_species = recode(
+        donor_species, "Eubacterium rectale" = "Agathobacter rectalis"
+      ),
+      recipient_species = recode(
+        recipient_species, "Eubacterium rectale" = "Agathobacter rectalis"
+      )
+    )
+  rel <- rel_raw |>
+    group_by(
+      final_target_id, final_target, donor_species, precursor_id,
+      precursor_name, recipient_species, displayed_root_set_ids,
+      displayed_root_set, displayed_root_count
+    ) |>
+    summarise(
+      analysis = analysis_membership(analysis),
+      donor_denominator = max(donor_denominator),
+      recipient_denominator = max(recipient_denominator),
+      supporting_donor_models = list(sort(unique(unlist(
+        supporting_donor_models, use.names = FALSE
+      )))),
+      supporting_recipient_models = list(sort(unique(unlist(
+        supporting_recipient_models, use.names = FALSE
+      )))),
+      displayed_root_models = list(sort(unique(unlist(
+        displayed_root_models, use.names = FALSE
+      )))),
+      donor_literature_supported = any(donor_literature_supported),
+      recipient_literature_supported = any(recipient_literature_supported),
+      .groups = "drop"
+    )
+  if (!nrow(rel)) stop("No Case-2 relationships for this panel.")
+
+  donors <- sort(unique(rel$donor_species))
+  precursors <- rel |>
+    distinct(precursor_id, precursor_name) |>
+    arrange(precursor_name)
+  recipients <- sort(unique(rel$recipient_species))
+
+  donor_ids <- setNames(paste0("d", seq_along(donors)), donors)
+  precursor_ids <- setNames(
+    paste0("p", seq_len(nrow(precursors))), precursors$precursor_id
+  )
+  recipient_ids <- setNames(paste0("r", seq_along(recipients)), recipients)
+
+  rel <- rel |>
+    mutate(
+      input_set_key = if_else(
+        displayed_root_count > 1L,
+        paste(
+          precursor_id, displayed_root_set_ids, recipient_species,
+          sep = "|"
+        ),
+        NA_character_
+      )
+    )
+  input_sets <- rel |>
+    filter(displayed_root_count > 1L) |>
+    group_by(input_set_key, displayed_root_set, recipient_species) |>
+    summarise(
+      analysis_class = analysis_membership(analysis),
+      support_models = list(sort(unique(unlist(
+        displayed_root_models, use.names = FALSE
+      )))),
+      denominator = max(recipient_denominator),
+      .groups = "drop"
+    ) |>
+    arrange(displayed_root_set, recipient_species) |>
+    mutate(node_id = paste0("q", row_number()))
+  input_set_ids <- setNames(input_sets$node_id, input_sets$input_set_key)
+  rel <- rel |>
+    mutate(
+      input_set_node = unname(input_set_ids[input_set_key])
+    )
+
+  donor_edges <- rel |>
+    group_by(donor_species, precursor_id) |>
+    summarise(
+      support_models = list(sort(unique(unlist(
+        supporting_donor_models, use.names = FALSE
+      )))),
+      denominator = first(donor_denominator),
+      analysis_class = analysis_membership(analysis),
+      .groups = "drop"
+    ) |>
+    mutate(
+      numerator = lengths(support_models),
+      frequency = numerator / denominator,
+      from = unname(donor_ids[donor_species]),
+      to = unname(precursor_ids[precursor_id]),
+      label = sprintf("%d/%d", numerator, denominator),
+      edge_group = "donor"
+    )
+
+  single_input_edges <- rel |>
+    filter(displayed_root_count == 1L) |>
+    group_by(precursor_id, recipient_species) |>
+    summarise(
+      support_models = list(sort(unique(unlist(
+        displayed_root_models, use.names = FALSE
+      )))),
+      denominator = first(recipient_denominator),
+      analysis_class = analysis_membership(analysis),
+      .groups = "drop"
+    ) |>
+    mutate(
+      numerator = lengths(support_models),
+      frequency = numerator / denominator,
+      from = unname(precursor_ids[precursor_id]),
+      to = unname(recipient_ids[recipient_species]),
+      label = sprintf("%d/%d", numerator, denominator),
+      edge_group = "single_input"
+    )
+
+  combined_input_entry_edges <- rel |>
+    filter(displayed_root_count > 1L) |>
+    group_by(precursor_id, input_set_node) |>
+    summarise(
+      support_models = list(sort(unique(unlist(
+        displayed_root_models, use.names = FALSE
+      )))),
+      denominator = first(recipient_denominator),
+      analysis_class = analysis_membership(analysis),
+      .groups = "drop"
+    ) |>
+    mutate(
+      numerator = lengths(support_models),
+      frequency = numerator / denominator,
+      from = unname(precursor_ids[precursor_id]),
+      to = input_set_node,
+      label = "",
+      edge_group = "combined_input_entry"
+    )
+
+  combined_input_exit_edges <- input_sets |>
+    mutate(
+      numerator = lengths(support_models),
+      frequency = numerator / denominator,
+      from = node_id,
+      to = unname(recipient_ids[recipient_species]),
+      label = sprintf("%d/%d", numerator, denominator),
+      edge_group = "combined_input_exit"
+    )
+
+  recipient_edges <- rel |>
+    group_by(recipient_species) |>
+    summarise(
+      support_models = list(sort(unique(unlist(
+        supporting_recipient_models, use.names = FALSE
+      )))),
+      denominator = first(recipient_denominator),
+      analysis_class = analysis_membership(analysis),
+      .groups = "drop"
+    ) |>
+    mutate(
+      numerator = lengths(support_models),
+      frequency = numerator / denominator,
+      from = unname(recipient_ids[recipient_species]),
+      to = "target",
+      label = sprintf("%d/%d", numerator, denominator),
+      edge_group = "recipient"
+    )
+
+  edges <- bind_rows(
+    donor_edges, single_input_edges, combined_input_entry_edges,
+    combined_input_exit_edges, recipient_edges
+  )
+
+  donor_nodes <- vapply(
+    donors,
+    function(label) sprintf(
+      paste0(
+        '%s [label="%s",shape="%s",style="rounded,filled",',
+        paste0(
+          'fillcolor="%s",color="%s",fontcolor="%s",penwidth=%.2f,',
+          'width=%.2f,height=%.2f];'
+        )
+      ),
+      donor_ids[[label]], wrap_dot_label(label),
+      style$donor_shape,
+      style$donor_fill, style$donor_border,
+      style$donor_font_colour, style$node_border_width,
+      style$node_width, style$node_height
+    ),
+    character(1)
+  )
+  precursor_nodes <- vapply(
+    seq_len(nrow(precursors)),
+    function(i) sprintf(
+      paste0(
+        '%s [label="%s",shape="%s",style=filled,',
+        'fillcolor="%s",color="%s",fontcolor="%s",penwidth=%.2f];'
+      ),
+      precursor_ids[[precursors$precursor_id[[i]]]],
+      wrap_dot_label(precursors$precursor_name[[i]]),
+      style$precursor_shape,
+      style$precursor_fill, style$precursor_border,
+      style$precursor_font_colour, style$node_border_width
+    ),
+    character(1)
+  )
+  input_set_nodes <- vapply(
+    seq_len(nrow(input_sets)),
+    function(i) sprintf(
+      paste0(
+        '%s [label="%s",shape="%s",style="rounded,filled",',
+        paste0(
+          'fillcolor="%s",color="%s",fontcolor="%s",penwidth=%.2f,',
+          'width=%.2f,height=%.2f];'
+        )
+      ),
+      input_sets$node_id[[i]],
+      wrap_dot_label(input_sets$displayed_root_set[[i]], width = 24L),
+      style$input_set_shape,
+      style$input_set_fill, style$input_set_border,
+      style$input_set_font_colour, style$node_border_width,
+      style$input_set_width, style$input_set_height
+    ),
+    character(1)
+  )
+  recipient_nodes <- vapply(
+    recipients,
+    function(label) sprintf(
+      paste0(
+        '%s [label="%s",shape="%s",style="rounded,filled",',
+        'fillcolor="%s",color="%s",fontcolor="%s",penwidth=%.2f];'
+      ),
+      recipient_ids[[label]], wrap_dot_label(label),
+      style$recipient_shape,
+      style$recipient_fill, style$recipient_border,
+      style$recipient_font_colour, style$node_border_width
+    ),
+    character(1)
+  )
+
+  edge_lines <- vapply(
+    seq_len(nrow(edges)),
+    function(i) {
+      frequency <- edges$frequency[[i]]
+      colour <- analysis_edge_colour(edges$analysis_class[[i]], style)
+      colour <- alpha(colour, style$edge_alpha)
+      sprintf(
+        paste0(
+          '%s -> %s [label="%s",color="%s",fontcolor="%s",',
+          'fontsize=%.1f,penwidth=%.2f,arrowsize=%.2f,arrowhead="%s",',
+          'style="%s"];'
+        ),
+        edges$from[[i]], edges$to[[i]], dot_escape(edges$label[[i]]),
+        colour, style$edge_label_colour, style$edge_label_size,
+        edge_width_from_frequency(frequency, style),
+        style$arrow_size, style$arrow_head, style$edge_line_style
+      )
+    },
+    character(1)
+  )
+
+  title <- sprintf(
+    "%s: %d unique Case-2 pathways across Core-6 and Core-15",
+    target_label, nrow(rel)
+  )
+  dot <- paste0(
+    "digraph G {",
+    sprintf(
+      paste0(
+        'graph [rankdir=LR,bgcolor="%s",pad=%.2f,nodesep=%.2f,',
+        'ranksep=%.2f,splines="%s",fontname="%s",labelloc=t,',
+        'label="%s",fontcolor="%s",fontsize=%.1f];'
+      ),
+      style$background_colour, style$graph_padding,
+      style$node_separation, style$rank_separation, style$spline_type,
+      style$font_name, dot_escape(title), style$title_colour,
+      style$title_size
+    ),
+    sprintf(
+      paste0(
+        'node [fontname="%s",fontsize=%.1f,margin=%.2f,',
+        'width=%.2f,height=%.2f];'
+      ),
+      style$font_name, style$node_font_size, style$node_padding,
+      style$node_width, style$node_height
+    ),
+    sprintf('edge [fontname="%s"];', style$font_name),
+    paste(donor_nodes, collapse = "\n"),
+    paste(precursor_nodes, collapse = "\n"),
+    paste(input_set_nodes, collapse = "\n"),
+    paste(recipient_nodes, collapse = "\n"),
+    sprintf(
+      paste0(
+        'target [label="%s",shape="%s",style=filled,',
+        'fillcolor="%s",color="%s",fontcolor="%s",penwidth=%.2f];'
+      ),
+      dot_escape(target_label), style$target_shape,
+      style$target_fill, style$target_border,
+      style$target_font_colour, style$target_border_width
+    ),
+    sprintf(
+      paste0(
+        'legend [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2">',
+        '<TR><TD><FONT COLOR="%s">━━━━</FONT></TD><TD ALIGN="LEFT">Core-6</TD></TR>',
+        '<TR><TD><FONT COLOR="%s">━━━━</FONT></TD><TD ALIGN="LEFT">Core-15</TD></TR>',
+        '<TR><TD><FONT COLOR="%s">━━━━</FONT></TD><TD ALIGN="LEFT">Both sets</TD></TR>',
+        '<TR><TD COLSPAN="2" ALIGN="LEFT">All displayed terminal reactions meet Case 2</TD></TR>',
+        '<TR><TD COLSPAN="2" ALIGN="LEFT">n/N = supporting/tested GEMs</TD></TR>',
+        '<TR><TD COLSPAN="2" ALIGN="LEFT">Snow-grey box = complete required input combination</TD></TR>',
+        '<TR><TD COLSPAN="2" ALIGN="LEFT">Snow-grey-box n/N = exact path plus import of every root / tested GEMs</TD></TR>',
+        '<TR><TD COLSPAN="2" ALIGN="LEFT">Selection: fewest inputs, then greatest eligible GEM support</TD></TR>',
+        '<TR><TD COLSPAN="2" ALIGN="LEFT">All alternative combinations are retained in the table</TD></TR>',
+        '</TABLE>>,shape=box,style="rounded,filled",',
+        'fillcolor="%s",color="%s",fontcolor="%s",fontsize=%.1f];'
+      ),
+      style$core6_edge_colour, style$core15_edge_colour,
+      style$both_sets_edge_colour,
+      style$legend_fill, style$legend_border,
+      style$legend_font_colour, style$legend_font_size
+    ),
+    "{rank=same;", paste(unname(donor_ids), collapse = ";"), ";legend;}",
+    "{rank=same;", paste(unname(precursor_ids), collapse = ";"), ";}",
+    if (nrow(input_sets)) {
+      paste0("{rank=same;", paste(input_sets$node_id, collapse = ";"), ";}")
+    } else {
+      ""
+    },
+    "{rank=same;", paste(unname(recipient_ids), collapse = ";"), ";}",
+    paste(edge_lines, collapse = "\n"),
+    "}"
+  )
+
+  grViz(
+    dot,
+    width = style$widget_width,
+    height = style$widget_height_px
+  )
+}
+
+pathway_table_view <- function(data) {
+  data |>
+    transmute(
+      Analysis = analysis,
+      Target = final_target,
+      `Potential donor species` = donor_species,
+      `Focal extracellular precursor` = precursor_name,
+      `Potential recipient species` = recipient_species,
+      `Root class` = recode(
+        root_class, single_root = "Single-root", multi_root = "Multi-root"
+      ),
+      `Literature class` = literature_case,
+      `Donor GEM support` = donor_support,
+      `Recipient GEM support` = recipient_support,
+      `Model-pair support` = pair_support,
+      `Supporting paths` = supporting_pathway_count,
+      `Donor citation` = coalesce(donor_literature_citation, "—"),
+      `Recipient citation` = coalesce(recipient_literature_citation, "—")
+    )
+}
+
+case2_pathway_table_view <- function(data) {
+  data |>
+    transmute(
+      Analysis = analysis,
+      Target = final_target,
+      `Potential donor species` = donor_species,
+      `Focal extracellular precursor` = precursor_name,
+      `Displayed recipient input set` = displayed_root_set,
+      `Displayed exact-path support` = fmt_n_over_n(
+        displayed_root_path_support_n, recipient_denominator
+      ),
+      `Every root importable among exact-path GEMs` = fmt_n_over_n(
+        displayed_root_support_n, displayed_root_path_support_n
+      ),
+      `Eligible complete-input support` = fmt_n_over_n(
+        displayed_root_support_n, recipient_denominator
+      ),
+      `Observed input sets` = observed_root_set_n,
+      `Input sets with at least one eligible GEM` = import_eligible_root_set_n,
+      `All observed input sets and support` = all_observed_root_sets,
+      `Potential recipient species` = recipient_species,
+      `Literature class` = literature_case,
+      `Donor GEM support` = donor_support,
+      `Recipient GEM support` = recipient_support,
+      `Model-pair support` = pair_support,
+      `Donor citation` = coalesce(donor_literature_citation, "—"),
+      `Recipient citation` = coalesce(recipient_literature_citation, "—")
+    )
+}
+
+make_expandable_table <- function(summary_text, data) {
+  tags$details(
+    style = "max-width:100%;overflow:hidden;margin-bottom:1em;",
+    tags$summary(summary_text),
+    tags$div(
+      style = "max-width:100%;overflow-x:auto;",
+      HTML(kable(
+        data, format = "html", escape = TRUE, row.names = FALSE,
+        table.attr = paste0(
+          "class='table table-striped table-bordered table-condensed' ",
+          "style='font-size:10.5px;width:max-content;min-width:100%;'"
+        )
+      ))
+    )
+  )
+}
+```
+
+#### Combined GABA network
+
+This figure contains nine unique Case-2 pathways after combining the two analysis
+sets. No complete GABA pathway was duplicated between Core-6 and Core-15 after
+normalizing *Eubacterium rectale* to *Agathobacter rectalis* for display.
+
+The parameter chunk immediately below controls only the GABA network.
+
+```{r gaba-pathway-parameters, include=FALSE}
+# ===================== USER-EDITABLE: GABA PATHWAY ======================
+gaba_pathway_style <- list(
+  # Figure size and background
+  widget_width = "100%", widget_height_px = 680,
+  background_colour = "#FFFFFF", graph_padding = 0.25,
+
+  # Node/box colours
+  donor_fill = "deepskyblue3", donor_border = "#00688B",
+  precursor_fill = "thistle1", precursor_border = "#BA55D3",
+  input_set_fill = "snow2", input_set_border = "#73737D",
+  recipient_fill = "slateblue1", recipient_border = "#473C8B",
+  target_fill = "#FFC1C1", target_border = "#CD5C8A",
+  donor_shape = "box", precursor_shape = "ellipse",
+  input_set_shape = "box",
+  recipient_shape = "box", target_shape = "doublecircle",
+
+  # Analysis-set colours used for arrows/lines
+  core6_edge_colour = "lightskyblue",
+  core15_edge_colour = "steelblue4",
+  both_sets_edge_colour = "slateblue1",
+
+  # Text colours and sizes
+  donor_font_colour = "#FFFFFF", precursor_font_colour = "#111111",
+  recipient_font_colour = "#FFFFFF", input_set_font_colour = "#111111",
+  target_font_colour = "#111111",
+  node_font_size = 12.0,
+  edge_label_colour = "#111111", edge_label_size = 10,
+  title_colour = "#111111", title_size = 18,
+  legend_font_colour = "#30303A", legend_font_size = 8.5,
+
+  # Node/box size and border thickness
+  node_width = 1.45, node_height = 0.42, node_padding = 0.09,
+  input_set_width = 1.75, input_set_height = 0.50,
+  node_border_width = 1.1, target_border_width = 2.1,
+
+  # Arrow/line transparency and thickness
+  edge_alpha = 0.90,
+  frequency_break_low = 0.30, frequency_break_mid = 0.70,
+  edge_width_low = 1.0, edge_width_mid = 2.6, edge_width_high = 5.0,
+  arrow_head = "vee", arrow_size = 0.78,
+  edge_line_style = "solid",
+
+  # Network spacing and legend box
+  spline_type = "spline", rank_separation = 1.20, node_separation = 0.20,
+  font_name = "Arial",
+  legend_fill = "#FFFFFF", legend_border = "#111111"
+)
+# =======================================================================
+```
+
+```{r gaba-pathway-plot}
+network_with_downloads(
+  make_supported_pathway_network(
+    case2_pathway_relationships, "4abut", "GABA", gaba_pathway_style
+  ),
+  "figure_F_GABA_case2_network"
+)
+```
+
+The GABA network contained four Core-6 Case-2 relationships (two
+single-precursor and two multi-precursor) and five Core-15 Case-2
+relationships (all multi-precursor). No complete relationship was duplicated
+between the two sets after taxonomic display-name normalization. For every
+displayed multi-precursor route, at least one exact-path recipient GEM could
+import and transport every metabolite in the displayed input set.
+
+**Figure F. Literature-supported Case-2 pathways ending in GABA.** The network
+shows only relationships for which both donor-to-exact-precursor and
+recipient-to-GABA evidence met the prespecified literature rule. Light-sky-blue
+edges denote Core-6, steel-blue edges denote Core-15, and slate-blue edges
+would denote a relationship present in both sets. Node colours distinguish
+potential donors (deep sky blue), focal precursors (thistle), potential
+recipients (slate blue), and GABA (pale violet red). A snow-grey intermediate
+box lists the complete input combination for a displayed multi-precursor path.
+Edge labels report supporting/tested GEMs (`n/N`); line width denotes low
+(≤30%), intermediate (>30% to ≤70%), or high (>70%) strain-panel support.
+These are structural-potential relationships, not direct evidence of in vivo
+metabolite transfer.
+
+#### Combined butyrate network
+
+This figure contains eleven unique Case-2 pathways after combining the two
+analysis sets. No complete butyrate pathway was duplicated between Core-6 and
+Core-15 after taxonomic display-name normalization.
+
+The parameter chunk immediately below controls only the butyrate network.
+
+```{r butyrate-pathway-parameters, include=FALSE}
+# =================== USER-EDITABLE: BUTYRATE PATHWAY ====================
+butyrate_pathway_style <- list(
+  # Figure size and background
+  widget_width = "100%", widget_height_px = 720,
+  background_colour = "#FFFFFF", graph_padding = 0.25,
+
+  # Node/box colours
+  donor_fill = "deepskyblue3", donor_border = "#00688B",
+  precursor_fill = "thistle1", precursor_border = "#BA55D3",
+  input_set_fill = "snow2", input_set_border = "#73737D",
+  recipient_fill = "slateblue1", recipient_border = "#473C8B",
+  target_fill = "#FFC1C1", target_border = "#CD5C8A",
+  donor_shape = "box", precursor_shape = "ellipse",
+  input_set_shape = "box",
+  recipient_shape = "box", target_shape = "doublecircle",
+
+  # Analysis-set colours used for arrows/lines
+  core6_edge_colour = "lightskyblue",
+  core15_edge_colour = "steelblue4",
+  both_sets_edge_colour = "slateblue1",
+
+  # Text colours and sizes
+  donor_font_colour = "#FFFFFF", precursor_font_colour = "#111111",
+  recipient_font_colour = "#FFFFFF", input_set_font_colour = "#111111",
+  target_font_colour = "#111111",
+  node_font_size = 10.0,
+  edge_label_colour = "#111111", edge_label_size = 10,
+  title_colour = "#111111", title_size = 18,
+  legend_font_colour = "#30303A", legend_font_size = 8.5,
+
+  # Node/box size and border thickness
+  node_width = 1.45, node_height = 0.42, node_padding = 0.09,
+  input_set_width = 1.75, input_set_height = 0.50,
+  node_border_width = 1.1, target_border_width = 2.1,
+
+  # Arrow/line transparency and thickness
+  edge_alpha = 0.90,
+  frequency_break_low = 0.30, frequency_break_mid = 0.70,
+  edge_width_low = 1.0, edge_width_mid = 2.6, edge_width_high = 5.0,
+  arrow_head = "vee", arrow_size = 0.78,
+  edge_line_style = "solid",
+
+  # Network spacing and legend box
+  spline_type = "spline", rank_separation = 1.20, node_separation = 0.20,
+  font_name = "Arial",
+  legend_fill = "#FFFFFF", legend_border = "#111111"
+)
+# =======================================================================
+```
+
+```{r butyrate-pathway-plot}
+network_with_downloads(
+  make_supported_pathway_network(
+    case2_pathway_relationships, "but", "Butyrate", butyrate_pathway_style
+  ),
+  "figure_G_butyrate_case2_network"
+)
+```
+
+The butyrate network contained five Core-6 Case-2 relationships (three
+single-precursor and two multi-precursor) and six Core-15 Case-2 relationships
+(all single-precursor). No complete relationship was duplicated between the
+two sets after taxonomic display-name normalization. Each displayed
+multi-precursor input set passed the same exact-path and every-root import
+requirements used for the GABA network.
+
+**Figure G. Literature-supported Case-2 pathways ending in butyrate.** The
+network is restricted to relationships with qualifying literature evidence for
+both the donor-to-exact-precursor and recipient-to-butyrate reactions. Colours,
+node roles, `n/N` edge labels, line-width thresholds, and snow-grey multi-precursor
+input boxes are defined as in Figure F. Edge colour identifies the originating
+analysis set; it does not indicate pathway direction or effect size. The
+displayed connections remain GEM-supported structural potential rather than
+experimentally confirmed exchange between the modeled organisms.
+
+#### Complete relationship tables
+
+The pathway figures are intentionally restricted to Case 2. The five Case-1
+relationships and all 624 relationships lacking qualifying donor-to-precursor
+support remain available in separate expandable tables below. Recipient-only
+evidence is retained in the last table but is not treated as cross-feeding
+literature support.
+
+```{r complete-pathway-tables, results='asis'}
+cat(as.character(make_expandable_table(
+  "Open the complete 20-row Case-2 table: both constituent reactions supported",
+  case2_pathway_table_view(case2_pathway_relationships)
+)))
+cat(as.character(make_expandable_table(
+  "Open the complete 5-row Case-1 table: donor-to-precursor support only",
+  pathway_table_view(case1_pathway_relationships)
+)))
+cat(as.character(make_expandable_table(
+  "Open the complete 624-row table: no qualifying donor-to-precursor support",
+  pathway_table_view(no_donor_support_pathway_relationships)
+)))
+```
+
+The following optional export code is deliberately inactive. It can be enabled
+later if separate supplementary CSV files are approved.
+
+```{r optional-pathway-csv-export, eval=FALSE, include=FALSE}
+# write.csv(
+#   case2_pathway_table_view(case2_pathway_relationships),
+#   "case2_both_constituent_reactions_supported.csv", row.names = FALSE
+# )
+# write.csv(
+#   pathway_table_view(case1_pathway_relationships),
+#   "case1_donor_to_precursor_supported_only.csv", row.names = FALSE
+# )
+# write.csv(
+#   pathway_table_view(no_donor_support_pathway_relationships),
+#   "pathway_relationships_no_qualifying_donor_support.csv",
+#   row.names = FALSE
+# )
+```
+
+### Primary literature used for constituent-reaction support
+
+```{r literature-table, results='asis'}
+literature <- data.frame(
+  `Evidence side` = c(
+    "Donor → precursor", "Donor → precursor", "Donor → precursor",
+    "Donor → precursor", "Donor → precursor", "Recipient → target",
+    "Recipient → target", "Recipient → target", "Recipient → target",
+    "Recipient → target"
+  ),
+  `Taxon represented` = c(
+    "Enterocloster bolteae / E. clostridioformis",
+    "Ruminococcus bromii",
+    "Alistipes onderdonkii",
+    "Bacteroides ovatus",
+    "Bacteroides xylanisolvens",
+    "Agathobacter rectalis (formerly Eubacterium rectale)",
+    "Agathobacter rectalis (formerly Eubacterium rectale)",
+    "Bacteroides ovatus",
+    "Gemmiger formicilis",
+    "Roseburia hominis"
+  ),
+  `Literature strain(s)` = c(
+    "WAL-14578; 2_1_49FAA; WAL-7855",
+    "L2-63",
+    "WAL 8169T / ATCC BAA-1178T",
+    "Defined five-species culture including B. ovatus",
+    "XB1AT / DSM 18836T",
+    "ATCC 33656",
+    "KLE1922",
+    "DSM 1896",
+    "ATCC 27749",
+    "A2-183 / DSM 16839"
+  ),
+  `Supported reaction or metabolite` = c(
+    "Extracellular glutamate and/or fumarate",
+    "Ethanol fermentation product",
+    "Succinate fermentation end product",
+    "Succinate production in a defined coculture",
+    "Succinate fermentation product",
+    "Butyrate production",
+    "GABA production",
+    "GABA production",
+    "Butyrate production",
+    "Butyrate production"
+  ),
+  Citation = c(
+    "Han et al. (2021), Nature",
+    "Laverde Gomez et al. (2019), Environmental Microbiology",
+    "Song et al. (2006), IJSEM",
+    "Liu et al. (2020), Applied and Environmental Microbiology",
+    "Chassard et al. (2008), IJSEM",
+    "Rivière et al. (2015), Applied and Environmental Microbiology",
+    "Strandwitz et al. (2019), Nature Microbiology",
+    "Otaru et al. (2021), Frontiers in Microbiology",
+    "Gossling and Moore (1975), International Journal of Systematic Bacteriology",
+    "Bhattacharya et al. (2022), Microorganisms"
+  ),
+  DOI = c(
+    "10.1038/s41586-021-03707-9",
+    "10.1111/1462-2920.14454",
+    "10.1099/ijs.0.64318-0",
+    "10.1128/AEM.01905-19",
+    "10.1099/ijs.0.65504-0",
+    "10.1128/AEM.02089-15",
+    "10.1038/s41564-018-0307-3",
+    "10.3389/fmicb.2021.656895",
+    "10.1099/00207713-25-2-202",
+    "10.3390/microorganisms10122496"
+  ),
+  `Evidence scope and caveat` = c(
+    "Direct cultured-strain extracellular metabolomics; the signal was condition- and strain-dependent.",
+    "Exact-strain monoculture evidence; supports ethanol release, not the complete modeled route.",
+    "Type-strain culture phenotype; supports succinate production at species level.",
+    "Direct metabolite measurement in a defined coculture; attribution is less direct than isolated monoculture.",
+    "Type-strain culture phenotype; supports succinate production at species level.",
+    "Exact-strain cross-feeding experiment; supports butyrate production by the recipient species.",
+    "Experimental strain panel; GABA production was pH-dependent and should not be generalized to every strain.",
+    "Direct culture-supernatant quantification; production magnitude was strain- and condition-dependent.",
+    "Exact type-strain physiological characterization; supports butyrate as a fermentation product.",
+    "Exact-strain culture study; supports butyrate production during oligosaccharide utilization."
+  ),
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+literature$DOI <- sprintf(
+  '<a href="https://doi.org/%s" target="_blank">%s</a>',
+  literature$DOI,
+  literature$DOI
+)
+
+kable(
+  literature,
+  format = "html",
+  escape = FALSE,
+  align = c("l", "l", "l", "l", "l", "l", "l"),
+  caption = "Primary studies used to support at least one constituent reaction"
+) |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = TRUE,
+    font_size = 11
+  ) |>
+  scroll_box(width = "100%", height = "620px")
+```
+
+#### Evidence statement for manuscript use
+
+The literature layer should be reported as **constituent-reaction support**.
+Case 1 supports only the donor-to-precursor reaction. Case 2 supports both terminal
+reactions, but still does not experimentally confirm transfer of that precursor
+between the modeled organisms. The GEM results remain predictions of structural
+metabolic potential requiring experimental validation.
+
+## Reproducibility
+
+This report generates the plots and tables directly during knitting. It does not write separate figure or CSV files. The plotting code is retained in this R Markdown source but hidden in the rendered HTML.
+
+```{r session-info}
+sessionInfo()
+```

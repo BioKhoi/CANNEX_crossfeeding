@@ -1,0 +1,2 @@
+target_name	base_id	host_relevance	metabolite_class	microbial_evidence	selection_rationale	reference
+Putrescine	ptrc	Oral biofilm ecology and host-relevant polyamine exposure	Microbial polyamine	Exact-strain experiments showed Streptococcus gordonii DL1/Challis ornithine release and ornithine-dependent putrescine production by Fusobacterium nucleatum ATCC 25586	Literature-positive validation of a specified donor-intermediate-recipient-target route	Sakanaka et al. 2022; doi:10.1128/msystems.00170-22

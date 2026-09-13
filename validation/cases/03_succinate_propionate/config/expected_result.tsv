@@ -1,0 +1,2 @@
+case_id	condition	donor_model_id	precursor_id	recipient_model_id	final_target_id	expected_outcome	status	result_json
+positive_succinate_propionate	Both exact literature strains; expectation table withheld until prediction finishes	M_Paraprevotella_xylaniphila_YIT_11841	succ	M_Phascolarctobacterium_succinatutens_YIT_12067	ppa	Expected edge must be present; unrelated predictions are not assigned biological truth by this row	Expected edge retained by unbiased run on 2026-08-30	validation/cases/03_succinate_propionate/results/positive_succinate_propionate.json

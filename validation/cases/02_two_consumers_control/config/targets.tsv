@@ -1,0 +1,2 @@
+target_name	base_id	host_relevance	metabolite_class	microbial_evidence	selection_rationale	reference
+Butyrate	but	Gut and neuroimmune relevance	Short-chain fatty acid	Exact-strain coculture showed lactate transfer from Bifidobacterium adolescentis L2-32 to Eubacterium hallii L2-7 with increased butyrate formation	Matched validation comparing one positive and one negative L-lactate consumer with the same donor	Belenguer et al. 2006; doi:10.1128/AEM.72.5.3593-3599.2006; Duncan et al. 2004; doi:10.1128/AEM.70.10.5810-5817.2004; Watanabe et al. 2012; doi:10.1128/AEM.06035-11

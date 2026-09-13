@@ -1,0 +1,279 @@
+---
+title: "CANNEX cross-feeding visualization reproducibility"
+subtitle: "Validation Cases 01-08 and combined Core-6/Core-15 networks"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: flatly
+params:
+  data_root: null
+  validation_root: null
+  strict_input_hash: true
+---
+
+```{r reproduction-setup, include=FALSE}
+if (!requireNamespace("knitr", quietly = TRUE)) {
+  stop("The R package 'knitr' is required.")
+}
+
+current_input <- tryCatch(knitr::current_input(), error = function(e) "")
+if (nzchar(current_input) && file.exists(current_input)) {
+  visualization_directory <- dirname(normalizePath(
+    current_input, winslash = "/", mustWork = TRUE
+  ))
+} else {
+  visualization_directory <- normalizePath(
+    getwd(), winslash = "/", mustWork = TRUE
+  )
+}
+
+repository_root <- normalizePath(
+  file.path(visualization_directory, ".."),
+  winslash = "/", mustWork = TRUE
+)
+manuscript_source <- file.path(
+  visualization_directory,
+  "source",
+  "CANNEX_CORE6_CORE15_CROSSFEEDING_SUMMARY.Rmd"
+)
+
+if (!file.exists(manuscript_source)) {
+  stop("Missing locked manuscript Rmd: ", manuscript_source)
+}
+
+read_manuscript_chunk <- function(label) {
+  lines <- readLines(manuscript_source, warn = FALSE)
+  pattern <- paste0("^```\\{r[[:space:]]+", label, "([,}])")
+  start <- grep(pattern, lines)
+  if (length(start) != 1L) {
+    stop("Expected exactly one manuscript chunk named '", label, "'.")
+  }
+  relative_end <- which(lines[(start + 1L):length(lines)] == "```")[1]
+  if (is.na(relative_end)) {
+    stop("The manuscript chunk '", label, "' is not closed.")
+  }
+  end <- start + relative_end
+  paste(lines[(start + 1L):(end - 1L)], collapse = "\n")
+}
+
+evaluate_manuscript_chunk <- function(label) {
+  expressions <- parse(text = read_manuscript_chunk(label))
+  environment <- knitr::knit_global()
+  value <- NULL
+  for (expression in expressions) {
+    value <- eval(expression, envir = environment)
+  }
+  value
+}
+
+# Load the exact packages, shared theme, and plotting helpers from the active
+# manuscript source before supplying repository-relative input locations.
+evaluate_manuscript_chunk("setup")
+
+data_root <- if (is.null(params$data_root) || !nzchar(params$data_root)) {
+  file.path(visualization_directory, "inputs", "gem_screening")
+} else {
+  params$data_root
+}
+validation_root <- if (
+  is.null(params$validation_root) || !nzchar(params$validation_root)
+) {
+  file.path(repository_root, "validation")
+} else {
+  params$validation_root
+}
+
+crossfeeding_input_paths <- list(
+  data_root = normalizePath(data_root, winslash = "/", mustWork = TRUE),
+  validation_root = normalizePath(
+    validation_root, winslash = "/", mustWork = TRUE
+  )
+)
+crossfeeding_strict_input_hash <- isTRUE(params$strict_input_hash)
+evaluate_manuscript_chunk("validation-data-preparation")
+evaluate_manuscript_chunk("validation-control-parameters")
+```
+
+## Pipeline validation
+
+Eight literature-defined cases were used to test whether the workflow retains
+expected relationships and excludes expected null relationships. Cases 01 and
+02 are matched triad controls: each contains a positive and a negative branch
+while holding either the recipient or donor constant. Cases 03--05 are
+independent positive anchors. Case 06 is a partial pathway match, whereas Cases
+07--08 are informative non-passes in which target-production potential was
+recovered but the literature-described donor edge was not reproduced.
+
+```{r validation-outcome-plot, fig.width=10, fig.height=3.5, out.width='100%'}
+evaluate_manuscript_chunk("validation-outcome-plot")
+```
+
+Cases 01 and 02 were matched triad controls expected to retain a
+literature-supported positive branch while excluding a biologically
+unsupported donor or recipient branch; the workflow reproduced both outcomes.
+Cases 03--05 were independent positive controls representing
+succinate-to-propionate, acetate-to-butyrate, and
+lactate-to-hydrogen-sulfide cross-feeding, and all three expected relationships
+were recovered. Case 06 was expected to recover the literature-described
+*S. gordonii*--ornithine--*F. nucleatum* pathway, but the ornithine donor edge
+was not retained. Instead, the GEMs supported a potential alternative
+*S. gordonii*--L-arginine--*F. nucleatum* route to putrescine, resulting in a
+partial match. Cases 07 and 08 recovered recipient-side
+indole-3-propionate and deoxycholate production potential, respectively, but
+did not recover the literature-described indole-3-lactate or cholate donor
+edges and were classified as informative non-passes. Overall, five cases
+passed formally, one produced a partial pathway match, and two exposed
+donor-side limitations in the available GEMs or workflow.
+
+**Figure V1. Pipeline-validation outcomes.** Bars give the number of the eight
+literature-defined cases classified as a formal pass, partial pathway match, or
+informative non-pass. Cases 01 and 02 are counted once each even though each
+contains both a positive and negative branch. Colours indicate outcome class
+only and do not quantify biological effect size.
+
+The pathway panels use four edge meanings: deep-sky-blue solid arrows are
+expected relationships retained by the workflow; black dashed T-bars are
+expected null relationships correctly excluded; medium-orchid arrows are
+recovered partial or recipient-side results; and violet-red dashed T-bars are
+literature-expected edges that were not recovered. Grey dashed arrows provide
+literature-route context only.
+
+### Validation cases 01--02
+
+```{r validation-cases-01-02}
+evaluate_manuscript_chunk("validation-cases-01-02")
+```
+
+**Figure V2. Matched triad validation controls.** Case 01 holds the recipient
+constant and contrasts a retained *Bifidobacterium adolescentis* L2-32
+L-lactate donor with an excluded *Paraprevotella xylaniphila* YIT 11841 donor.
+Case 02 holds the donor constant and contrasts retained L-lactate use by
+*Eubacterium hallii* L2-7 with the excluded negative recipient
+*Phascolarctobacterium succinatutens* YIT 12067. A dashed T-bar denotes the
+prespecified absent relationship and therefore contributes to a formal pass.
+
+### Validation cases 03--04
+
+```{r validation-cases-03-04}
+evaluate_manuscript_chunk("validation-cases-03-04")
+```
+
+**Figure V3. Independent short-chain-fatty-acid validation anchors.** Case 03
+shows the retained *P. xylaniphila* YIT 11841 -> succinate ->
+*P. succinatutens* YIT 12067 -> propionate relationship. Case 04 shows the
+retained *Bifidobacterium longum* NCC2705 -> acetate -> *Eubacterium rectale*
+ATCC 33656 -> butyrate relationship. Solid arrows denote retained expected
+components.
+
+### Validation case 05
+
+```{r validation-case-05}
+evaluate_manuscript_chunk("validation-case-05")
+```
+
+**Figure V4. Hydrogen-sulfide validation anchor.** Case 05 retained the
+expected *B. adolescentis* L2-32 -> L-lactate -> *Desulfovibrio piger* ATCC
+29098 -> hydrogen-sulfide relationship.
+
+### Validation cases 06--08
+
+```{r validation-cases-06-08}
+evaluate_manuscript_chunk("validation-cases-06-08")
+```
+
+**Figure V5. Partial and informative non-pass validation cases.** Case 06
+recovered putrescine-production potential and a GEM-supported potential
+alternative *S. gordonii* CH1 -> L-arginine -> *F. nucleatum* ATCC 25586 route,
+but did not recover the literature-described *S. gordonii* CH1 -> ornithine
+donor edge. Case 07 recovered indole-3-propionate-production potential in
+*Clostridium sporogenes* ATCC 15579, but the donor GEM did not represent the
+expected indole-3-lactate metabolite. Case 08 recovered
+deoxycholate-production potential and identified cholate on the recipient
+side, but cholate production was not retained for *Bacteroides
+thetaiotaomicron* VPI-5482. Violet-red dashed T-bars mark the expected donor
+components that were not recovered.
+
+```{r pathway-data-preparation, include=FALSE}
+evaluate_manuscript_chunk("exact-count-table")
+evaluate_manuscript_chunk("sankey-data")
+evaluate_manuscript_chunk("pathway-data-preparation")
+```
+
+## Combined GABA network
+
+This figure contains nine unique Case-2 pathways after combining the two
+analysis sets. No complete GABA pathway was duplicated between Core-6 and
+Core-15 after normalizing *Eubacterium rectale* to *Agathobacter rectalis* for
+display.
+
+```{r gaba-pathway-parameters, include=FALSE}
+evaluate_manuscript_chunk("gaba-pathway-parameters")
+```
+
+```{r gaba-pathway-plot}
+evaluate_manuscript_chunk("gaba-pathway-plot")
+```
+
+The GABA network contained four Core-6 Case-2 relationships (two
+single-precursor and two multi-precursor) and five Core-15 Case-2 relationships
+(all multi-precursor). No complete relationship was duplicated between the two
+sets after taxonomic display-name normalization. For every displayed
+multi-precursor route, at least one exact-path recipient GEM could import and
+transport every metabolite in the displayed input set.
+
+**Figure F. Literature-supported Case-2 pathways ending in GABA.** The network
+shows only relationships for which both donor-to-exact-precursor and
+recipient-to-GABA evidence met the prespecified literature rule.
+Light-sky-blue edges denote Core-6, steel-blue edges denote Core-15, and
+slate-blue edges would denote a relationship present in both sets. Node colours
+distinguish potential donors (deep sky blue), focal precursors (thistle),
+potential recipients (slate blue), and GABA (pale violet red). A snow-grey
+intermediate box lists the complete input combination for a displayed
+multi-precursor path. Edge labels report supporting/tested GEMs (`n/N`); line
+width denotes low (<=30%), intermediate (>30% to <=70%), or high (>70%)
+strain-panel support. These are structural-potential relationships, not direct
+evidence of in vivo metabolite transfer.
+
+## Combined butyrate network
+
+This figure contains eleven unique Case-2 pathways after combining the two
+analysis sets. No complete butyrate pathway was duplicated between Core-6 and
+Core-15 after taxonomic display-name normalization.
+
+```{r butyrate-pathway-parameters, include=FALSE}
+evaluate_manuscript_chunk("butyrate-pathway-parameters")
+```
+
+```{r butyrate-pathway-plot}
+evaluate_manuscript_chunk("butyrate-pathway-plot")
+```
+
+The butyrate network contained five Core-6 Case-2 relationships (three
+single-precursor and two multi-precursor) and six Core-15 Case-2 relationships
+(all single-precursor). No complete relationship was duplicated between the
+two sets after taxonomic display-name normalization. Each displayed
+multi-precursor input set passed the same exact-path and every-root import
+requirements used for the GABA network.
+
+**Figure G. Literature-supported Case-2 pathways ending in butyrate.** The
+network is restricted to relationships with qualifying literature evidence for
+both the donor-to-exact-precursor and recipient-to-butyrate reactions. Colours,
+node roles, `n/N` edge labels, line-width thresholds, and snow-grey
+multi-precursor input boxes are defined as in Figure F. Edge colour identifies
+the originating analysis set; it does not indicate pathway direction or effect
+size. The displayed connections remain GEM-supported structural potential
+rather than experimentally confirmed exchange between the modeled organisms.
+
+## Reproducibility information
+
+The source manuscript code checks the locked validation and pathway-input
+SHA-256 values before plotting. The software versions used for this rendering
+are recorded below.
+
+```{r session-info}
+sessionInfo()
+```

@@ -1,0 +1,2 @@
+case_id	condition	donor_model_id	precursor_id	recipient_model_id	final_target_id	expected_outcome	status	result_json
+literature_positive_lactate_h2s	Both exact literature strains; target-only discovery; expectation table withheld until prediction finishes	M_Bifidobacterium_adolescentis_L2_32	lac_L	M_Desulfovibrio_piger_ATCC_29098	h2s	Expected lactate edge must be present; other roots and co-requirements remain predictions	Expected edge retained by unbiased run on 2026-08-30	validation/cases/05_lactate_h2s/results/result.json

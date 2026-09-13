@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this workflow, please cite the associated manuscript and this software repository."
+title: "Target-guided potential cross-feeding workflow"
+type: software
+repository-code: "https://github.com/BioKhoi/CANNEX_crossfeeding"
+authors:
+  - family-names: "Nguyen"
+    given-names: "Khoi"
+license: "BSD-3-Clause"

@@ -1,0 +1,3 @@
+case_id	varied_component	donor_model_id	consumer_model_id	precursor_id	target_id	expected_result	biological_basis	reference
+case1_positive_donor	donor	M_Bifidobacterium_adolescentis_L2_32	M_Eubacterium_hallii_L2_7	lac_L	but	edge_present	L2-32 releases lactate and L2-7 uses lactate to form butyrate	Belenguer et al. 2006; doi:10.1128/AEM.72.5.3593-3599.2006
+case1_negative_donor	donor	M_Paraprevotella_xylaniphila_YIT_11841	M_Eubacterium_hallii_L2_7	lac_L	but	edge_absent	YIT 11841 was characterized as producing succinate and acetate rather than lactate as glucose-fermentation end products	Morotomi et al. 2009; doi:10.1099/ijs.0.008169-0

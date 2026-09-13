@@ -1,0 +1,2 @@
+target_name	base_id	host_relevance	metabolite_class	microbial_evidence	selection_rationale	reference
+Butyrate	but	Gut and neuroimmune relevance	Short-chain fatty acid	Exact-strain AXOS co-culture showed acetate-supported butyrate formation	Literature validation target for an experimentally demonstrated acetate cross-feeding route	Riviere et al. 2015; doi:10.1128/AEM.02089-15
