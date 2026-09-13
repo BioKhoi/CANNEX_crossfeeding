@@ -310,9 +310,10 @@ class StructuralRulesTest(unittest.TestCase):
         with mock.patch("step4_intracellular_production.os.pathsep", ";"):
             with mock.patch.dict(os.environ, {"PATH": r"C:\\Windows\\System32"}):
                 environment = executable_environment(Path("/portable/mene"))
+        executable_directory = str(Path("/portable/mene").parent)
         self.assertEqual(
             environment["PATH"],
-            r"/portable;C:\\Windows\\System32",
+            executable_directory + ";" + r"C:\\Windows\\System32",
         )
 
     def test_menetools_unproducible_target_is_a_null_result(self) -> None:
@@ -439,6 +440,7 @@ class ReleaseMetadataTest(unittest.TestCase):
                 workbook.sheetnames,
                 ["Run Summary", "Results", "Evidence"],
             )
+            workbook.close()
 
     def test_python_dependency_files_are_aligned(self) -> None:
         requirements = {
