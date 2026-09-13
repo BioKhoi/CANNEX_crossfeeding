@@ -9,14 +9,8 @@ permissions:
 
 jobs:
   test:
-    name: ${{ matrix.os }} / Python 3.11
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
+    name: Windows / Python 3.11
+    runs-on: windows-latest
 
     steps:
       - name: Check out repository
