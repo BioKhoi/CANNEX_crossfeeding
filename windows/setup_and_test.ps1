@@ -43,6 +43,37 @@ function Invoke-CondaChecked {
     }
 }
 
+function Get-CondaCommandResult {
+    param([Parameter(Mandatory = $true)][string[]]$CondaArguments)
+
+    $CommandOutput = & $script:CondaCommand @CondaArguments 2>&1
+    $CommandExitCode = $LASTEXITCODE
+    $CommandText = ($CommandOutput | Out-String).Trim()
+    return [PSCustomObject]@{
+        ExitCode = $CommandExitCode
+        Text = $CommandText
+    }
+}
+
+function Invoke-CondaVersionCheck {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$CondaArguments,
+        [Parameter(Mandatory = $true)][string]$ExpectedPattern,
+        [Parameter(Mandatory = $true)][string]$DependencyName
+    )
+
+    $Result = Get-CondaCommandResult -CondaArguments $CondaArguments
+    if ($Result.Text) {
+        Write-Host $Result.Text
+    }
+    if ($Result.ExitCode -ne 0) {
+        throw "$DependencyName check failed with exit code $($Result.ExitCode)."
+    }
+    if ($Result.Text -notmatch $ExpectedPattern) {
+        throw "$DependencyName returned no recognizable version output."
+    }
+}
+
 Write-Host "Cross-feeding Windows setup and test" -ForegroundColor Cyan
 Write-Host "Release folder: $ReleaseRoot"
 Write-Host "Bundled tutorial: Validation Case 01"
@@ -67,12 +98,34 @@ else {
     Write-Host "Using existing Conda environment: $EnvironmentName"
 }
 
+$ClingoArguments = @("run", "-n", $EnvironmentName, "clingo", "--version")
+$ClingoProbe = Get-CondaCommandResult -CondaArguments $ClingoArguments
+if (
+    $ClingoProbe.ExitCode -ne 0 -or
+    $ClingoProbe.Text -notmatch "(?im)clingo version 5\.8"
+) {
+    Write-Host "Repairing the Clingo executable from conda-forge..." -ForegroundColor Yellow
+    Invoke-CondaChecked @(
+        "install", "--name", $EnvironmentName, "--yes", "--force-reinstall",
+        "--override-channels", "--channel", "conda-forge", "clingo=5.8"
+    )
+}
+
 Push-Location $ReleaseRoot
 try {
     Write-Host "Checking Python and scientific dependencies..."
-    Invoke-CondaChecked @("run", "-n", $EnvironmentName, "python", "--version")
-    Invoke-CondaChecked @("run", "-n", $EnvironmentName, "mene", "--version")
-    Invoke-CondaChecked @("run", "-n", $EnvironmentName, "clingo", "--version")
+    Invoke-CondaVersionCheck `
+        -CondaArguments @("run", "-n", $EnvironmentName, "python", "--version") `
+        -ExpectedPattern "(?im)Python 3\.11" `
+        -DependencyName "Python"
+    Invoke-CondaVersionCheck `
+        -CondaArguments @("run", "-n", $EnvironmentName, "mene", "--version") `
+        -ExpectedPattern "(?im)^mene 3\.4\.0" `
+        -DependencyName "MeneTools"
+    Invoke-CondaVersionCheck `
+        -CondaArguments $ClingoArguments `
+        -ExpectedPattern "(?im)clingo version 5\.8" `
+        -DependencyName "Clingo"
 
     Write-Host "Validating the bundled Case 01 models, manifest, targets, diet, and dependencies..."
     Invoke-CondaChecked @(

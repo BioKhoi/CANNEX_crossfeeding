@@ -6,7 +6,8 @@
 - Internet access for the first environment setup
 - 64-bit Miniconda or Anaconda
 
-No R installation is needed to test the scientific Python workflow.
+Administrator access, Windows Developer Mode and R are not required to test
+the scientific Python workflow.
 
 ## Default compatibility test
 
@@ -17,11 +18,18 @@ No R installation is needed to test the scientific Python workflow.
 
 The first run:
 
-- creates the pinned `crossfeeding-workflow` Conda environment;
-- checks Python, MeneTools and Clingo;
+- creates the pinned `crossfeeding-workflow` Conda environment using only
+  conda-forge;
+- checks that Python, MeneTools and Clingo return recognizable version output;
+- replaces a silent or broken bundled Clingo executable with the working
+  conda-forge build when necessary;
 - validates the bundled Validation Case 01 GEMs, manifest and target table;
 - runs the automated tests; and
 - checks the seven locked validation comparisons.
+
+On a standard Windows account, the symlink-specific unit test may be reported
+as skipped. This is expected and does not stop the remaining checks or the
+Case 01 analysis.
 
 The default test does not create a new Excel or JSON result.
 

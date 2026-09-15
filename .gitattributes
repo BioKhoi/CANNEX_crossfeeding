@@ -1,0 +1,3 @@
+# Preserve repository bytes exactly on every operating system. Several
+# published SHA-256 manifests intentionally verify the checked-out files.
+* -text

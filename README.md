@@ -52,32 +52,41 @@ For the complete scientific definitions, see
 ## Installation
 
 Python 3.11 is recommended. Download or clone this repository, open a terminal
-in the repository folder and use either Conda or a standard Python virtual
-environment.
+in the repository folder and use Conda. A standard Python virtual environment
+is also supported on macOS and Linux.
 
-### Conda
+### Conda: macOS or Linux
 
 ```bash
 conda env create -f environment.yml
 conda activate crossfeeding-workflow
 ```
 
-### Python virtual environment
+### Windows
 
-macOS or Linux:
+On Windows 10 or 11, use the supplied launcher. It creates the Conda
+environment from conda-forge, checks that Clingo produces valid version
+output, repairs the Clingo executable if necessary and runs the release tests:
+
+```bat
+windows\RUN_WINDOWS_TEST.bat
+```
+
+To run the complete Case 01 tutorial and create a new Excel workbook:
+
+```bat
+windows\RUN_WINDOWS_TEST.bat -FullAnalysis
+```
+
+The standard pip/virtual-environment route is not recommended on Windows
+because the upstream `clyngor-with-clingo` wheel may install a nonfunctional
+Clingo executable. The supplied Conda launcher handles this dependency issue.
+
+### Python virtual environment: macOS or Linux
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-Windows PowerShell:
-
-```powershell
-py -3.11 -m venv .venv
-.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```

@@ -16,14 +16,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v7
+      - name: Set up Miniforge
+        uses: conda-incubator/setup-miniconda@v4
         with:
-          python-version: "3.11"
-          cache: pip
+          miniforge-version: "latest"
+          activate-environment: ""
 
-      - name: Install pinned dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-
-      - name: Run short test suite
-        run: python -m unittest discover -s tests -v
+      - name: Run Windows setup, tests, and Case 01
+        shell: powershell
+        run: .\windows\setup_and_test.ps1 -FullAnalysis

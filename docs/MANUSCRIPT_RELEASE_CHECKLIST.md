@@ -9,7 +9,9 @@ cross-feeding validation materials in this prototype.
   is embedded in the scripts, saved JSON files or saved Excel workbooks.
 - Dependencies are pinned consistently in `requirements.txt` and
   `environment.yml`.
-- All 26 automated tests pass without skips.
+- All 26 automated tests pass on macOS and on the administrative Windows CI
+  runner. On a standard Windows account without symlink privileges, the one
+  symlink-specific portability test is skipped rather than failing the suite.
 - All eight retained validation folders pass dependency, manifest and SHA-256
   checksum setup checks.
 - All seven formal literature/control comparisons pass.
@@ -23,8 +25,8 @@ cross-feeding validation materials in this prototype.
   under `CANNEX_study/` with SHA-256 checksums and an AGORA2 third-party notice.
 - Release clutter (`.DS_Store` and compiled Python caches) has been removed,
   and no personal computer path was found in the release text files.
-- A short GitHub Actions workflow is configured for clean Python 3.11 tests on
-  Windows, and the remote workflow passes.
+- The GitHub Actions workflow runs the complete Windows setup, release tests,
+  locked comparisons and Case 01 analysis rather than a Python-only unit test.
 - The public README now introduces the scientific purpose, inputs, six-stage
   workflow, installation, Excel output and separate validation tutorials.
 - Cases 01-08 each have a supporting paper, a reproducible command, the locked

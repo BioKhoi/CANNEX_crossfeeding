@@ -409,7 +409,13 @@ class ReleaseMetadataTest(unittest.TestCase):
             bin_directory = Path(temporary) / "bin"
             bin_directory.mkdir()
             python_link = bin_directory / "python"
-            python_link.symlink_to(Path(sys.executable).resolve())
+            try:
+                python_link.symlink_to(Path(sys.executable).resolve())
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(
+                    "symlink creation is unavailable for this Windows account: "
+                    + str(error)
+                )
             mene = bin_directory / "mene"
             mene.write_text("", encoding="utf-8")
             with mock.patch.object(find_crossfeeding.sys, "executable", str(python_link)):
@@ -454,6 +460,8 @@ class ReleaseMetadataTest(unittest.TestCase):
         )
         for requirement in requirements:
             self.assertIn(f"- {requirement}", environment)
+        self.assertIn("- nodefaults", environment)
+        self.assertIn("- clingo=5.8", environment)
 
     def test_release_uses_only_validation_and_cannex_model_panels(self) -> None:
         root_models = RELEASE_DIRECTORY / "models"
@@ -473,6 +481,15 @@ class ReleaseMetadataTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("01_two_donors_control", windows_setup)
         self.assertNotIn("ModelBaseUrl", windows_setup)
+        self.assertIn("Get-CondaCommandResult", windows_setup)
+        self.assertIn("--force-reinstall", windows_setup)
+        self.assertIn("clingo version 5\\.8", windows_setup)
+        self.assertEqual(
+            (RELEASE_DIRECTORY / ".gitattributes").read_text(encoding="utf-8"),
+            "# Preserve repository bytes exactly on every operating system. Several\n"
+            "# published SHA-256 manifests intentionally verify the checked-out files.\n"
+            "* -text\n",
+        )
 
     def test_saved_validation_results_match_expected_cases(self) -> None:
         expected_paths = sorted(

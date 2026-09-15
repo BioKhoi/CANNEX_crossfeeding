@@ -1,4 +1,5 @@
 MeneTools==3.4.0
+clyngor==1.0.0
 clyngor-with-clingo==5.8.0.post1
 openpyxl==3.1.5
 scipy==1.17.1
